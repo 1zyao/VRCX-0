@@ -1,6 +1,7 @@
 import {
     BellIcon,
     BotIcon,
+    CloudCogIcon,
     ImageIcon,
     type LucideIcon,
     MessageSquareIcon,
@@ -37,6 +38,7 @@ import { SettingsInterfaceTab } from './components/settings-tabs/SettingsInterfa
 import { SettingsMediaTab } from './components/settings-tabs/SettingsMediaTab';
 import { SettingsNotificationsTab } from './components/settings-tabs/SettingsNotificationsTab';
 import { SettingsSocialTab } from './components/settings-tabs/SettingsSocialTab';
+import { SettingsSyncTab } from './components/settings-tabs/SettingsSyncTab';
 import { SettingsSystemTab } from './components/settings-tabs/SettingsSystemTab';
 import { SettingsVrTab } from './components/settings-tabs/SettingsVrTab';
 import { SettingsDialogs } from './components/SettingsDialogs';
@@ -57,6 +59,7 @@ const SETTINGS_TAB_ICONS: Record<string, LucideIcon> = {
     vr: RectangleGogglesIcon,
     media: ImageIcon,
     integrations: PlugIcon,
+    sync: CloudCogIcon,
     advanced: TerminalIcon,
     feedback: MessageSquareIcon
 };
@@ -69,6 +72,7 @@ const MemoSettingsVrTab = memo(SettingsVrTab);
 const MemoSettingsMediaTab = memo(SettingsMediaTab);
 const MemoSettingsAiTab = memo(SettingsAiTab);
 const MemoSettingsIntegrationsTab = memo(SettingsIntegrationsTab);
+const MemoSettingsSyncTab = memo(SettingsSyncTab);
 const MemoSettingsAdvancedTab = memo(SettingsAdvancedTab);
 const MemoSettingsFeedbackTab = memo(SettingsFeedbackTab);
 
@@ -185,6 +189,7 @@ function SettingsPageContent() {
                         <MemoSettingsMediaTab />
                         <MemoSettingsAiTab active={activeTab === 'ai'} />
                         <MemoSettingsIntegrationsTab />
+                        <MemoSettingsSyncTab />
                         <MemoSettingsAdvancedTab />
                         <MemoSettingsFeedbackTab />
                     </SettingsTabsVisibilityContext>
