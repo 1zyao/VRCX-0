@@ -39,7 +39,8 @@ type ToolDialogHostKey =
     | 'purchaseHistoryOpen'
     | 'llmEndpointsOpen'
     | 'profileBackupOpen'
-    | 'offlineRecordOpen';
+    | 'offlineRecordOpen'
+    | 'syncOpen';
 
 const toolRouteMap = {
     gallery: '/tools/gallery',
@@ -66,7 +67,8 @@ const toolDialogHostMap: Record<ToolDialogKey, ToolDialogHostKey> = {
     'purchase-history': 'purchaseHistoryOpen',
     'llm-endpoints': 'llmEndpointsOpen',
     'profile-backup': 'profileBackupOpen',
-    'offline-record': 'offlineRecordOpen'
+    'offline-record': 'offlineRecordOpen',
+    sync: 'syncOpen'
 };
 
 const toolAppApiCommands: Record<ToolAppApiMethod, () => Promise<boolean>> = {

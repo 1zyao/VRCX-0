@@ -624,7 +624,8 @@ const initialState: RuntimeStoreState = {
         purchaseHistoryOpen: false,
         llmEndpointsOpen: false,
         profileBackupOpen: false,
-        offlineRecordOpen: false
+        offlineRecordOpen: false,
+        syncOpen: false
     },
     changelogTargetVersion: '',
     databaseUpgrade: {

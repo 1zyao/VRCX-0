@@ -42,6 +42,13 @@ import {
 } from '@/repositories/syncRepository';
 import { toast } from '@/services/toastService';
 import { useSyncStatusStore } from '@/state/syncStatusStore';
+import {
+    collectorRank,
+    deviceHealth,
+    deviceHealthy,
+    normaliseReason,
+    writingDeviceIds as computeWritingDeviceIds
+} from '@/features/settings/lib/syncViewModel';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import { FieldLabel } from '@/ui/shadcn/field';
@@ -316,51 +323,10 @@ export function SettingsSyncTab() {
         }
     };
 
-    // Election rank advertised by each device; mirrors
-    // `collector_election::effective_priority` (legacy `forced` == 1000).
-    const collectorRank = (device: { role?: string; priority?: number }) =>
-        device.role === 'forced' && !device.priority
-            ? 1000
-            : (device.priority ?? 0);
-
-    // Health score each device advertised, or `null` when it never reported one.
-    //
-    // Only a build with the health tracker fills `healthReason`, so that field is
-    // the reliable "did it measure anything" signal. Showing 100 for a device
-    // that never measured itself would claim something we do not know; unknown is
-    // treated as healthy for the ranking (fail-open, same as the Rust election).
-    const deviceHealth = (device: {
-        health?: number;
-        healthReason?: string;
-    }): number | null =>
-        device.healthReason && device.healthReason.trim()
-            ? (device.health ?? 0)
-            : null;
-
-    const deviceHealthy = (device: {
-        health?: number;
-        healthReason?: string;
-    }) => {
-        const health = deviceHealth(device);
-        return health === null || health > 0;
-    };
-
     // Reasons come from the backend as stable identifiers; unknown values fall
     // back to "healthy" so a newer host cannot break the label.
-    const healthReasonLabel = (reason?: string) => {
-        const known = [
-            'healthy',
-            'websocketUnstable',
-            'authExpired',
-            'syncFailing',
-            'recovering',
-            'disabled',
-            'yielded'
-        ];
-        const key = (reason ?? '').trim();
-        const safe = known.includes(key) ? key : 'healthy';
-        return t(`view.settings.sync.status.health_${safe}`);
-    };
+    const healthReasonLabel = (reason?: string) =>
+        t(`view.settings.sync.status.health_${normaliseReason(reason)}`);
 
     const canTest = host.trim().length > 0 && database.trim().length > 0;
     // Offline devices linger in the presence table until they age out of the
@@ -386,23 +352,7 @@ export function SettingsSyncTab() {
     // `collector_election::blockers` on the Rust side, so the badge matches what
     // the engine actually decided. A legacy `forced` row without a number ranks
     // as priority 1000 there, so it does here too.
-    const writerDeviceIds = new Set<string>(
-        (() => {
-            // Mirror collector_election::may_collect: a device that reported
-            // itself unhealthy has yielded, so it must never be shown as the
-            // writer even when its priority is the highest.
-            const eligible = onlineDevices.filter((device) =>
-                deviceHealthy(device)
-            );
-            if (eligible.length === 0) return [];
-            const ranked = [...eligible].sort(
-                (a, b) =>
-                    collectorRank(b) - collectorRank(a) ||
-                    a.deviceId.localeCompare(b.deviceId)
-            );
-            return ranked[0] ? [ranked[0].deviceId] : [];
-        })()
-    );
+    const writerDeviceIds = computeWritingDeviceIds(status?.remoteDevices ?? []);
 
     return (
         <SettingsTabContent value="sync">

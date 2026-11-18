@@ -24,6 +24,7 @@ import {
 } from './GameSegments';
 import { NowPlayingSegment } from './NowPlayingSegment';
 import { OfflineRecordIndicator } from './OfflineRecordIndicator';
+import { SyncStatusIndicator } from './SyncStatusIndicator';
 import { ProxySegment } from './ProxySegment';
 import type { StatusBarFooterProps } from './statusBarTypes';
 import { AppUptimeSegment, ClocksSegment } from './TimeSegments';
@@ -122,6 +123,7 @@ export const StatusBarFooter = forwardRef<HTMLElement, StatusBarFooterProps>(
                         ) : null}
                         <DesktopWidgetToggle />
                         <OfflineRecordIndicator />
+                        <SyncStatusIndicator />
                         <ProxySegment
                             open={proxyEditorOpen}
                             onOpenChange={onProxyEditorOpenChange}

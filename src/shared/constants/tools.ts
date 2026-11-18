@@ -30,7 +30,8 @@ export type ToolDialogKey =
     | 'purchase-history'
     | 'llm-endpoints'
     | 'profile-backup'
-    | 'offline-record';
+    | 'offline-record'
+    | 'sync';
 
 type ToolHostCapabilityKey =
     | 'gameLaunch'
@@ -242,6 +243,16 @@ const toolDefinitions: ToolDefinition[] = [
         descriptionKey: 'offline_record.tools_description',
         navEligible: true,
         action: { type: 'dialog', dialogKey: 'offline-record' }
+    },
+    {
+        key: 'sync',
+        category: 'data',
+        iconKey: 'server',
+        navIcon: 'lucide:CloudCog',
+        titleKey: 'view.settings.category.sync',
+        descriptionKey: 'view.settings.sync.status.description',
+        navEligible: true,
+        action: { type: 'dialog', dialogKey: 'sync' }
     },
     {
         key: 'llm-endpoints',

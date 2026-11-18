@@ -81,6 +81,11 @@ const ProfileBackupDialog = lazy(() =>
     }))
 );
 
+const SyncDialog = lazy(() =>
+    import('./tools-dialogs/sync/SyncDialog').then((module) => ({
+        default: module.SyncDialog
+    }))
+);
 const OfflineRecordDialog = lazy(() =>
     import('./tools-dialogs/offline-record/OfflineRecordDialog').then(
         (module) => ({
@@ -135,6 +140,7 @@ export function ToolsDialogsHost() {
     const offlineRecordOpen = useRuntimeStore(
         (state) => state.systemHosts.offlineRecordOpen
     );
+    const syncOpen = useRuntimeStore((state) => state.systemHosts.syncOpen);
     const setSystemHostOpen = useRuntimeStore(
         (state) => state.setSystemHostOpen
     );
@@ -253,6 +259,12 @@ export function ToolsDialogsHost() {
                     onOpenChange={(open) =>
                         setSystemHostOpen('profileBackupOpen', open)
                     }
+                />
+            </MountOnFirstOpen>
+            <MountOnFirstOpen open={syncOpen}>
+                <SyncDialog
+                    open={syncOpen}
+                    onOpenChange={(open) => setSystemHostOpen('syncOpen', open)}
                 />
             </MountOnFirstOpen>
             <MountOnFirstOpen open={offlineRecordOpen}>
