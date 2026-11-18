@@ -607,6 +607,11 @@ export async function bindRuntimeEvents(): Promise<() => void> {
             handleFeedLoggerHealthEvent(await commands.appFeedLoggerStatus());
         }
     );
+    // Sync too: a device with sync switched off never emits syncStatusChanged, so
+    // without this read its status icon would have nothing to render from.
+    void hydrateRuntimeState('Failed to hydrate sync status:', async () => {
+        useSyncStatusStore.getState().apply(await commands.syncStatus());
+    });
     let combinedSnapshot: BackendRuntimeCombinedSnapshot | null = null;
     try {
         combinedSnapshot =

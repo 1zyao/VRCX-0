@@ -5,7 +5,6 @@ import {
     CloudOffIcon,
     CloudSyncIcon
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -14,7 +13,6 @@ import {
     type SyncSeverity
 } from '@/features/settings/lib/syncViewModel';
 import { cn } from '@/lib/utils';
-import { fetchSyncStatus } from '@/repositories/syncRepository';
 import { useRuntimeStore } from '@/state/runtimeStore';
 import { useSyncStatusStore } from '@/state/syncStatusStore';
 import { Button } from '@/ui/shadcn/button';
@@ -45,39 +43,10 @@ export function SyncStatusIndicator() {
     const setSystemHostOpen = useRuntimeStore(
         (state) => state.setSystemHostOpen
     );
-    // A device with sync switched off never emits `syncStatusChanged`, so on a
-    // fresh install the store would stay empty and this icon would never appear.
-    // Read the status once on mount; the event stream takes over from there.
-    const [loaded, setLoaded] = useState(false);
-    useEffect(() => {
-        if (snapshot) {
-            setLoaded(true);
-            return;
-        }
-        let cancelled = false;
-        void fetchSyncStatus()
-            .then((next) => {
-                if (cancelled) {
-                    return;
-                }
-                useSyncStatusStore.getState().apply(next);
-                setLoaded(true);
-            })
-            .catch(() => {
-                if (!cancelled) {
-                    setLoaded(true);
-                }
-            });
-        return () => {
-            cancelled = true;
-        };
-    }, [snapshot]);
 
-    // Hide only while the first read is in flight; an icon that never appears is
-    // worse than one that says "sync is off".
-    if (!snapshot && !loaded) {
-        return null;
-    }
+    // No status yet renders as "off", like the offline recorder: an icon that
+    // never appears is worse than one that says sync is switched off, and the
+    // store is hydrated at startup anyway.
 
     const inactive = !snapshot || !snapshot.enabled || !snapshot.configured;
     const health = snapshot?.collectorHealth ?? 0;
