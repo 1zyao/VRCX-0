@@ -5,6 +5,7 @@ import {
     CloudOffIcon,
     CloudSyncIcon
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -13,6 +14,7 @@ import {
     type SyncSeverity
 } from '@/features/settings/lib/syncViewModel';
 import { cn } from '@/lib/utils';
+import { fetchSyncStatus } from '@/repositories/syncRepository';
 import { useRuntimeStore } from '@/state/runtimeStore';
 import { useSyncStatusStore } from '@/state/syncStatusStore';
 import { Button } from '@/ui/shadcn/button';
@@ -43,23 +45,50 @@ export function SyncStatusIndicator() {
     const setSystemHostOpen = useRuntimeStore(
         (state) => state.setSystemHostOpen
     );
+    // A device with sync switched off never emits `syncStatusChanged`, so on a
+    // fresh install the store would stay empty and this icon would never appear.
+    // Read the status once on mount; the event stream takes over from there.
+    const [loaded, setLoaded] = useState(false);
+    useEffect(() => {
+        if (snapshot) {
+            setLoaded(true);
+            return;
+        }
+        let cancelled = false;
+        void fetchSyncStatus()
+            .then((next) => {
+                if (cancelled) {
+                    return;
+                }
+                useSyncStatusStore.getState().apply(next);
+                setLoaded(true);
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setLoaded(true);
+                }
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [snapshot]);
 
-    // Nothing to say before the first status read: an icon claiming "disabled"
-    // would be a guess, and a wrong guess here is worse than a blank slot.
-    if (!snapshot) {
+    // Hide only while the first read is in flight; an icon that never appears is
+    // worse than one that says "sync is off".
+    if (!snapshot && !loaded) {
         return null;
     }
 
-    const inactive = !snapshot.enabled || !snapshot.configured;
-    const health = snapshot.collectorHealth ?? 0;
-    const blockers = snapshot.collectorBlockers ?? [];
-    const reason = normaliseReason(snapshot.collectorReason);
+    const inactive = !snapshot || !snapshot.enabled || !snapshot.configured;
+    const health = snapshot?.collectorHealth ?? 0;
+    const blockers = snapshot?.collectorBlockers ?? [];
+    const reason = normaliseReason(snapshot?.collectorReason);
     const severity = syncSeverity({
-        enabled: snapshot.enabled,
-        configured: snapshot.configured,
-        lastError: snapshot.lastError,
-        health: snapshot.collectorHealth ?? null,
-        reason: snapshot.collectorReason
+        enabled: snapshot?.enabled ?? false,
+        configured: snapshot?.configured ?? false,
+        lastError: snapshot?.lastError ?? null,
+        health: snapshot?.collectorHealth ?? null,
+        reason: snapshot?.collectorReason
     });
     // Same rule as the backend election: healthy and nobody outranking us.
     const collecting =
@@ -67,7 +96,7 @@ export function SyncStatusIndicator() {
         health > 0 &&
         blockers.length === 0 &&
         reason !== 'disabled';
-    const pending = snapshot.pendingOutbox ?? 0;
+    const pending = snapshot?.pendingOutbox ?? 0;
 
     let Icon = CloudIcon;
     if (inactive) {
