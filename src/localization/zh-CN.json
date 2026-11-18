@@ -3301,7 +3301,8 @@
                     "back": "上一步",
                     "later": "稍后再说",
                     "finish": "完成并启用",
-                    "reconfigure": "重新配置"
+                    "reconfigure": "重新配置",
+                    "enabled_toast": "已启用同步，正在首次同步…"
                 },
                 "enable_toast": "远程同步已启用",
                 "disable_toast": "远程同步已停用",

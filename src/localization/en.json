@@ -3312,7 +3312,8 @@
                     "back": "Back",
                     "later": "Later",
                     "finish": "Finish and enable",
-                    "reconfigure": "Reconfigure"
+                    "reconfigure": "Reconfigure",
+                    "enabled_toast": "Sync enabled, first sync is running…"
                 },
                 "enable_toast": "Remote sync enabled",
                 "disable_toast": "Remote sync disabled",

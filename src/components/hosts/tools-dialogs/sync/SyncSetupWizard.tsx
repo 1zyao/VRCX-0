@@ -245,7 +245,7 @@ export function SyncSetupWizard({
                         </>
                     }
                 >
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                         <Field className="sm:col-span-2">
                             <FieldLabel htmlFor="sync-host">
                                 {t('view.settings.sync.connection.host_label')}
@@ -262,7 +262,7 @@ export function SyncSetupWizard({
                                 }
                             />
                         </Field>
-                        <Field className="sm:col-span-2">
+                        <Field>
                             <FieldLabel htmlFor="sync-port">
                                 {t('view.settings.sync.connection.port_label')}
                             </FieldLabel>

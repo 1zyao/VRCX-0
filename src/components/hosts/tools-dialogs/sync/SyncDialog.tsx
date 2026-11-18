@@ -147,16 +147,28 @@ export function SyncDialog({
                                 // device out of the election by finishing setup.
                                 const next = await configureSync(input);
                                 useSyncStatusStore.getState().apply(next);
-                                // Kick one cycle so the first pull starts now
-                                // instead of waiting for the interval timer.
-                                try {
-                                    const after = await triggerSyncNow();
-                                    useSyncStatusStore.getState().apply(after);
-                                } catch {
-                                    // A failed first cycle is reported by the
-                                    // panel; setup itself succeeded.
-                                }
+                                // Close first, sync in the background. The first
+                                // cycle can take minutes (bootstrap pulls every
+                                // remote row); blocking the dialog on it would
+                                // look like a hang while the progress bar that
+                                // explains it sits behind the modal.
                                 onOpenChange(false);
+                                toast.add({
+                                    type: 'success',
+                                    title: t(
+                                        'view.settings.sync.setup.enabled_toast'
+                                    )
+                                });
+                                void triggerSyncNow()
+                                    .then((after) =>
+                                        useSyncStatusStore
+                                            .getState()
+                                            .apply(after)
+                                    )
+                                    .catch(() => {
+                                        // The panel reports the failure through
+                                        // lastError; setup itself succeeded.
+                                    });
                             }}
                         />
                     ) : !status ? (
