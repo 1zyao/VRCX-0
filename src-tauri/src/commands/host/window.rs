@@ -193,6 +193,9 @@ fn flush_before_task_shutdown(state: &AppState) {
     let runtime_host = state.runtime_host();
     crate::bootstrap::block_on_runtime_task(async {
         runtime_host.shutdown_telemetry_flush().await;
+        // Tell peers we are gone before the process disappears: otherwise the
+        // feed stays unrecorded until the activity window (45 s+) expires.
+        runtime_host.remote_sync().resign_collection().await;
         runtime_host.leave_feed_logger().await;
     });
 }

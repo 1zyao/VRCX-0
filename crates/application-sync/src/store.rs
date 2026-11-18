@@ -126,6 +126,10 @@ pub trait RemoteSyncStore: Send + Sync {
     /// Drop one device's presence row (a machine that is gone for good).
     /// Returns false when there was no such row.
     async fn devices_delete(&self, device_id: &str) -> SyncStoreResult<bool>;
+    /// Push this device's heartbeat into the past so peers stop waiting for it.
+    /// Used on graceful shutdown to hand collection over immediately instead of
+    /// leaving the feed unrecorded until the activity window expires.
+    async fn devices_mark_stale(&self, device_id: &str) -> SyncStoreResult<bool>;
 
     /// Drop ops older than the retention window; returns rows removed.
     async fn ops_gc(&self, retain_days: i64) -> SyncStoreResult<u64>;

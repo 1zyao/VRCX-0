@@ -175,6 +175,22 @@ impl RemoteSyncHost {
     }
 
     /// Stop the engine and uninstall local capture.
+    /// Hand collection over on graceful shutdown.
+    ///
+    /// Bounded so a slow or unreachable database cannot delay the exit: the
+    /// timeout losing that race only costs the activity window it saves in the
+    /// common case.
+    pub async fn resign_collection(&self) {
+        let Some(engine) = self.current() else {
+            return;
+        };
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            engine.resign_collection(),
+        )
+        .await;
+    }
+
     /// Forget one device's presence row (offline machines that are gone).
     pub async fn forget_device(&self, device_id: &str) -> Result<bool> {
         let Some(engine) = self.current() else {

@@ -860,6 +860,20 @@ impl RemoteSyncEngine {
             .map_err(SyncEngineError::from)
     }
 
+    /// Hand collection over before this process disappears.
+    ///
+    /// Peers only treat a device as gone once its heartbeat is older than the
+    /// activity window (45 s+), so a clean exit would otherwise leave the feed
+    /// unrecorded for that long. Marking ourselves stale elects a replacement on
+    /// the peers' next poll instead. Best effort: shutdown never blocks on this.
+    pub async fn resign_collection(self: &Arc<Self>) -> bool {
+        vrcx_0_contracts::set_live_feed_collector(false);
+        self.store
+            .devices_mark_stale(self.handle.device_id())
+            .await
+            .unwrap_or(false)
+    }
+
     pub async fn status(self: &Arc<Self>) -> SyncStatusSnapshot {
         let (phase, last_error) = self.phase_snapshot();
 

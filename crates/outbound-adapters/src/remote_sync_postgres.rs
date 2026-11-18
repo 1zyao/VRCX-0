@@ -902,10 +902,28 @@ impl RemoteSyncStore for PostgresSyncStore {
     async fn devices_delete(&self, device_id: &str) -> SyncStoreResult<bool> {
         self.with_client(|client| async move {
             let removed = client
-                .execute("DELETE FROM _sync_devices WHERE device_id = $1", &[&device_id])
+                .execute(
+                    "DELETE FROM _sync_devices WHERE device_id = $1",
+                    &[&device_id],
+                )
                 .await
                 .map_err(pg_error)?;
             Ok((removed > 0, client))
+        })
+        .await
+    }
+
+    async fn devices_mark_stale(&self, device_id: &str) -> SyncStoreResult<bool> {
+        self.with_client(|client| async move {
+            let updated = client
+                .execute(
+                    "UPDATE _sync_devices SET last_seen_at = now() - interval '1 hour'
+                     WHERE device_id = $1",
+                    &[&device_id],
+                )
+                .await
+                .map_err(pg_error)?;
+            Ok((updated > 0, client))
         })
         .await
     }

@@ -106,7 +106,23 @@ async fn async_main() -> ExitCode {
         }
     }
     println!("headless runtime is running. Press Ctrl+C to stop.");
+    // systemd stops us with SIGTERM; treat it exactly like Ctrl+C so collection
+    // is handed over instead of the feed going dark until the window expires.
+    #[cfg(unix)]
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        .expect("failed to install SIGTERM handler");
     tokio::select! {
+        _ = async {
+            #[cfg(unix)]
+            { let _ = sigterm.recv().await; }
+            #[cfg(not(unix))]
+            { std::future::pending::<()>().await; }
+        } => {
+            state.remote_sync().resign_collection().await;
+            console_sink.begin_shutdown();
+            shutdown_runtime(&state, "sigterm");
+            ExitCode::SUCCESS
+        }
         signal = tokio::signal::ctrl_c() => {
             if let Err(error) = signal {
                 report_headless_error(
@@ -118,6 +134,9 @@ async fn async_main() -> ExitCode {
                 shutdown_runtime(&state, "signal-error");
                 return ExitCode::from(1);
             }
+            // Hand the feed over before exiting so no desktop has to wait out
+            // the activity window to notice we are gone.
+            state.remote_sync().resign_collection().await;
             console_sink.begin_shutdown();
             shutdown_runtime(&state, "ctrl-c");
             ExitCode::SUCCESS
@@ -129,6 +148,7 @@ async fn async_main() -> ExitCode {
                 "headless:fatal",
                 format!("headless runtime fatal error: {reason}"),
             );
+            state.remote_sync().resign_collection().await;
             console_sink.begin_shutdown();
             shutdown_runtime(&state, "fatal-error");
             ExitCode::from(1)

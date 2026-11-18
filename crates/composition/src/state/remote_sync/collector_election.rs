@@ -55,7 +55,11 @@ pub const CONFIG_INTERVAL_SEC: &str = "remoteSync.intervalSec";
 const LEGACY_FORCED_PRIORITY: i32 = 1000;
 
 /// Poll cadence for the election; also the worst-case handover delay.
-pub const POLL_INTERVAL: Duration = Duration::from_secs(30);
+///
+/// Short on purpose: a graceful exit marks the device stale, so the successor is
+/// elected on the next tick. The poll is one lightweight query, so 5 s costs far
+/// less than the feed gap a 30 s cadence would leave behind.
+pub const POLL_INTERVAL: Duration = Duration::from_secs(5);
 
 /// Minimum activity window: a peer that has not synced for this long is gone.
 pub const ACTIVITY_WINDOW: Duration = Duration::from_secs(45);
