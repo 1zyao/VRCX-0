@@ -25,6 +25,13 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import {
+    collectorRank,
+    deviceHealth,
+    deviceHealthy,
+    normaliseReason,
+    writingDeviceIds as computeWritingDeviceIds
+} from '@/features/settings/lib/syncViewModel';
 import type {
     SyncBootstrapProgress,
     SyncConnectionTestResult,
@@ -42,13 +49,6 @@ import {
 } from '@/repositories/syncRepository';
 import { toast } from '@/services/toastService';
 import { useSyncStatusStore } from '@/state/syncStatusStore';
-import {
-    collectorRank,
-    deviceHealth,
-    deviceHealthy,
-    normaliseReason,
-    writingDeviceIds as computeWritingDeviceIds
-} from '@/features/settings/lib/syncViewModel';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import { FieldLabel } from '@/ui/shadcn/field';
@@ -262,6 +262,24 @@ export function SettingsSyncTab() {
         }
     };
 
+    // Priority lives with the device identity now, so it saves on blur instead
+    // of riding on the connection card's save button.
+    const saveCollectorPriority = async () => {
+        const parsed = Number.parseInt(collectorPriority, 10);
+        const clamped = Number.isFinite(parsed)
+            ? Math.min(100, Math.max(0, parsed))
+            : 0;
+        setCollectorPriority(clamped.toString());
+        try {
+            const snapshot = await configureSync({
+                collectorPriority: clamped
+            });
+            setStatus(snapshot);
+        } catch (error) {
+            toast.add({ type: 'error', title: String(error) });
+        }
+    };
+
     const handleSave = async (nextEnabled: boolean) => {
         setSaving(true);
         try {
@@ -352,7 +370,9 @@ export function SettingsSyncTab() {
     // `collector_election::blockers` on the Rust side, so the badge matches what
     // the engine actually decided. A legacy `forced` row without a number ranks
     // as priority 1000 there, so it does here too.
-    const writerDeviceIds = computeWritingDeviceIds(status?.remoteDevices ?? []);
+    const writerDeviceIds = computeWritingDeviceIds(
+        status?.remoteDevices ?? []
+    );
 
     return (
         <SettingsTabContent value="sync">
@@ -489,45 +509,6 @@ export function SettingsSyncTab() {
                                     'view.settings.sync.connection.interval_unit'
                                 )}
                             </span>
-                        </div>
-                    </Field>
-                    <Field
-                        label={t(
-                            'view.settings.sync.connection.priority_label'
-                        )}
-                        description={t(
-                            'view.settings.sync.connection.priority_hint'
-                        )}
-                    >
-                        <div className="flex items-center justify-end gap-2">
-                            <Input
-                                value={collectorPriority}
-                                onChange={(event) =>
-                                    // digits only, at most 3 chars
-                                    setCollectorPriority(
-                                        event.target.value
-                                            .replace(/[^0-9]/g, '')
-                                            .slice(0, 3)
-                                    )
-                                }
-                                onBlur={() =>
-                                    setCollectorPriority((current) => {
-                                        const parsed = Number.parseInt(
-                                            current,
-                                            10
-                                        );
-                                        if (!Number.isFinite(parsed)) {
-                                            return '0';
-                                        }
-                                        return Math.min(
-                                            100,
-                                            Math.max(0, parsed)
-                                        ).toString();
-                                    })
-                                }
-                                inputMode="numeric"
-                                className="w-20"
-                            />
                         </div>
                     </Field>
                 </div>
@@ -805,6 +786,49 @@ export function SettingsSyncTab() {
 
                         {allDevices.length > 0 ? (
                             <div>
+                                <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border px-3 py-2 text-xs">
+                                    <span className="flex items-center gap-1.5 font-medium">
+                                        <LaptopIcon className="text-primary size-3.5" />
+                                        {status.remoteDevices
+                                            .find(
+                                                (device) =>
+                                                    device.deviceId ===
+                                                    status.deviceId
+                                            )
+                                            ?.deviceName?.trim() ||
+                                            status.deviceId.slice(0, 8)}
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                        {t(
+                                            'view.settings.sync.status.this_device_tag'
+                                        )}
+                                    </span>
+                                    <span
+                                        className="text-muted-foreground ml-auto"
+                                        title={t(
+                                            'view.settings.sync.connection.priority_hint'
+                                        )}
+                                    >
+                                        {t(
+                                            'view.settings.sync.connection.priority_label'
+                                        )}
+                                    </span>
+                                    <Input
+                                        value={collectorPriority}
+                                        onChange={(event) =>
+                                            setCollectorPriority(
+                                                event.target.value
+                                                    .replace(/[^0-9]/g, '')
+                                                    .slice(0, 3)
+                                            )
+                                        }
+                                        onBlur={() =>
+                                            void saveCollectorPriority()
+                                        }
+                                        inputMode="numeric"
+                                        className="h-7 w-16 text-xs"
+                                    />
+                                </div>
                                 <p className="mb-2 flex items-center gap-1.5 text-xs font-medium">
                                     <LaptopIcon className="size-3.5" />
                                     {t('view.settings.sync.status.devices')}
