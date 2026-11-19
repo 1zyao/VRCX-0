@@ -55,10 +55,13 @@ pub async fn sync__configure(
         entries.push(config_entry("remoteSync.intervalSec", interval.max(5)));
     }
     if let Some(priority) = collectorPriority {
-        entries.push(config_entry(
-            "remoteSync.collectorPriority",
-            priority.clamp(0, 100),
-        ));
+        // Per-device election rank: stored in the machine-local meta table, not
+        // in `configs`, so it can never be published or overwritten by sync.
+        state
+            .runtime_host()
+            .remote_sync()
+            .set_collector_priority(priority.clamp(0, 100))
+            .map_err(AppError::from)?;
     }
     if !entries.is_empty() {
         state

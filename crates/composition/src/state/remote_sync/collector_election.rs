@@ -41,6 +41,7 @@ use std::time::Duration;
 
 use vrcx_0_contracts::{set_live_feed_collector, SyncDeviceRecord, DEVICE_ROLE_FORCED};
 use vrcx_0_persistence::config::get_string;
+use vrcx_0_persistence::sync::{sync_meta_get, sync_meta_set};
 
 use crate::state::remote_sync::RemoteSyncHost;
 
@@ -94,9 +95,31 @@ pub fn read_role(host: &RemoteSyncHost) -> String {
 }
 
 /// Read this device's priority from the local config store.
+/// Where this device keeps its own collector priority.
+///
+/// Deliberately *not* a `configs` row: config rows are part of the synced table
+/// set, so a fresh device's first sync used to publish its priority and every
+/// peer adopted it (all devices ended up on the same rank and the wrong machine
+/// won the election). `_sync_meta` is machine-local bookkeeping and never
+/// travels; the value reaches peers through this device's `_sync_devices` row,
+/// next to its name.
+pub const META_PRIORITY_SETTING: &str = "sync.setting.collectorPriority";
+
 pub fn read_priority(host: &RemoteSyncHost) -> i32 {
+    if let Some(raw) = sync_meta_get(host.db(), META_PRIORITY_SETTING)
+        .ok()
+        .flatten()
+    {
+        if let Ok(value) = raw.trim().parse::<i32>() {
+            return value.clamp(-1000, 1000);
+        }
+    }
+    // Migration: older builds kept it in `configs`. Seed the local setting once
+    // so an existing 20/10/0 layout survives the switch.
     let raw = get_string(host.db(), CONFIG_COLLECTOR_PRIORITY, "").unwrap_or_default();
-    raw.trim().parse::<i32>().unwrap_or(0).clamp(-1000, 1000)
+    let value = raw.trim().parse::<i32>().unwrap_or(0).clamp(-1000, 1000);
+    let _ = sync_meta_set(host.db(), META_PRIORITY_SETTING, &value.to_string());
+    value
 }
 
 /// Activity window: at least [`ACTIVITY_WINDOW`], but never shorter than two

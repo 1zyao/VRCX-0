@@ -77,6 +77,17 @@ impl RemoteSyncHost {
     }
 
     /// Sanitized fields for the settings UI (no password value).
+    /// Persist this device's collector priority (machine-local, never synced).
+    pub fn set_collector_priority(&self, value: i64) -> Result<()> {
+        let clamped = value.clamp(0, 100);
+        vrcx_0_persistence::sync::sync_meta_set(
+            &self.db,
+            crate::state::remote_sync::collector_election::META_PRIORITY_SETTING,
+            &clamped.to_string(),
+        )
+        .map_err(|error| crate::error::Error::custom(error.to_string()))
+    }
+
     pub fn connection_fields(&self) -> vrcx_0_contracts::SyncConnectionFields {
         let settings = self.settings();
         let read_i64 = |key: &str, default: i64| {
@@ -94,10 +105,8 @@ impl RemoteSyncHost {
             tls_verify: settings.tls_verify,
             allow_plaintext: settings.allow_plaintext,
             has_password: !settings.password.is_empty(),
-            collector_priority: read_i64(
-                crate::state::remote_sync::collector_election::CONFIG_COLLECTOR_PRIORITY,
-                0,
-            ),
+            collector_priority: crate::state::remote_sync::collector_election::read_priority(self)
+                as i64,
             interval_seconds: read_i64(
                 vrcx_0_application_sync::CONFIG_INTERVAL_SEC,
                 vrcx_0_application_sync::DEFAULT_INTERVAL_SEC as i64,
