@@ -191,14 +191,9 @@ impl FeedLiveProjector {
         if upserts.is_empty() {
             return;
         }
-        // Only the elected collector records live feed, so only it announces
-        // entries to the UI. A device that lost the collector election keeps its
-        // websocket (friend status stays live) but stays silent here: the rows
-        // arrive through sync instead. Announcing them anyway would render the
-        // same event twice — once from the live store, once from the synced row.
-        if !vrcx_0_contracts::is_live_feed_collector() {
-            return;
-        }
+        // Every device announces what its own websocket saw: the feed must stay
+        // live on non-collectors too, and synced rows do not refresh it. Only the
+        // write path is gated, so exactly one device turns observations into rows.
         self.event_bus.emit(RealtimeFeedProjection {
             generation,
             owner_user_id: owner_user_id.clone(),
@@ -228,9 +223,6 @@ impl FeedLiveProjector {
         let Some(sequence) = sequence else {
             return;
         };
-        if !vrcx_0_contracts::is_live_feed_collector() {
-            return;
-        }
         self.event_bus.emit(RealtimeFeedProjection {
             generation,
             owner_user_id,

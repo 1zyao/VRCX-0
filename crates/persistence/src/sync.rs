@@ -1243,6 +1243,13 @@ pub fn apply_pulled_ops(
                 stats.skipped_self += 1;
                 continue;
             }
+            // Defensive: a peer (or a row written before the exclusion list
+            // grew) must not be able to overwrite this device's credentials or
+            // per-device settings.
+            if op.table == "configs" && !config_op_is_syncable(op) {
+                stats.skipped_missing += 1;
+                continue;
+            }
             let Some(columns) = plans.get(&op.table).cloned() else {
                 stats.skipped_missing += 1;
                 continue;
@@ -1845,6 +1852,49 @@ pub fn read_table_chunk(
 /// Build the bootstrap ops for one row. Counter fields split into increment
 /// facts (exact sums across independently seeded devices); the snapshot is
 /// seeded so later takes diff from the pushed value.
+/// Whether one `configs` row may travel between devices.
+///
+/// The capture trigger already filters these on live writes, but bootstrap
+/// reads the table directly and pulls apply whatever the remote holds, so both
+/// paths need the same predicate.
+pub fn config_row_is_syncable(columns: &[String], row: &[Value]) -> bool {
+    let column = |name: &str| {
+        columns
+            .iter()
+            .position(|column| column == name)
+            .and_then(|index| row.get(index))
+    };
+    let Some(key) = column("key").and_then(Value::as_str) else {
+        return true;
+    };
+    if !vrcx_0_contracts::is_config_key_syncable(&key.to_ascii_lowercase()) {
+        return false;
+    }
+    // Sealed values are encrypted with a machine-bound key: useless elsewhere.
+    !matches!(
+        column("value").and_then(Value::as_str),
+        Some(value) if value.starts_with("enc1:")
+    )
+}
+
+fn config_op_is_syncable(op: &SyncOpRecord) -> bool {
+    let key = op
+        .entity_key
+        .first()
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    if !vrcx_0_contracts::is_config_key_syncable(&key.to_ascii_lowercase()) {
+        return false;
+    }
+    !matches!(
+        op.payload
+            .as_ref()
+            .and_then(|payload| payload.get("value"))
+            .and_then(serde_json::Value::as_str),
+        Some(value) if value.starts_with("enc1:")
+    )
+}
+
 pub fn bootstrap_set_ops(
     db: &DatabaseService,
     plan: &TablePlan,

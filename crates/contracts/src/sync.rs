@@ -235,6 +235,10 @@ pub const SYNC_EXCLUDED_CONFIG_KEYS: &[&str] = &[
     // Schema/machine-local bookkeeping.
     "config:vrcx_0_databaseversion",
     "config:databaseversion",
+    // Saved VRChat session blob (cookies/tokens per account). It is machine
+    // bound: other devices cannot use it, and it must never leave the device.
+    "config:vrcx_savedcredentials",
+    "config:savedcredentials",
     // Legacy upstream VRCX credential keys (defensive).
     "config:lastfmusername",
     "config:lastfmpassword",

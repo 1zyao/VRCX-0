@@ -725,6 +725,15 @@ impl RemoteSyncEngine {
                 }
                 let mut ops = Vec::with_capacity(chunk.rows.len());
                 for (index, row) in chunk.rows.iter().enumerate() {
+                    // Bootstrap reads the table directly, so the capture
+                    // trigger's exclusion list does not apply here: a fresh
+                    // device would otherwise publish its own credentials and
+                    // per-device settings on first sync.
+                    if plan.table == "configs"
+                        && !vrcx_0_persistence::sync::config_row_is_syncable(&chunk.columns, row)
+                    {
+                        continue;
+                    }
                     let hlc = bootstrap_row_hlc(&chunk.columns, row, &self.handle);
                     let row_ops = bootstrap_set_ops(
                         &self.db,
