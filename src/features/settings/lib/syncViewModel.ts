@@ -71,6 +71,11 @@ export function writingDeviceIds(devices: SyncDeviceRecord[]): Set<string> {
 /** Stable machine reasons the backend writes into `sync.collectorReason`. */
 export const COLLECTOR_REASONS = [
     'healthy',
+    // Why this device cannot record right now. Missing these from the list made
+    // `normaliseReason` fall back to 'healthy', so an un-logged-in device showed
+    // "health 0" next to the label "OK".
+    'notLoggedIn',
+    'disconnected',
     'websocketUnstable',
     'authExpired',
     'syncFailing',
@@ -124,7 +129,12 @@ export function syncSeverity(input: {
         return 'warning';
     }
     const reason = normaliseReason(input.reason);
-    if (reason === 'websocketUnstable' || reason === 'recovering') {
+    if (
+        reason === 'websocketUnstable' ||
+        reason === 'recovering' ||
+        reason === 'notLoggedIn' ||
+        reason === 'disconnected'
+    ) {
         return 'warning';
     }
     return 'ok';
