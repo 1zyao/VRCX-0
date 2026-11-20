@@ -3362,6 +3362,8 @@
                     "pending_outbox": "{{count}} waiting to upload",
                     "health_healthy": "OK",
                     "health_websocketUnstable": "Connection unstable",
+                    "health_disconnected": "Disconnected",
+                    "health_notLoggedIn": "Not signed in",
                     "health_authExpired": "Session expired",
                     "health_syncFailing": "Sync failing repeatedly",
                     "health_recovering": "Recovering",

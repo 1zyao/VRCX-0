@@ -32,6 +32,10 @@
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+/// Below this much accumulated history the ratio is meaningless and the current
+/// socket state decides instead.
+pub const MIN_UPTIME_HISTORY: Duration = Duration::from_secs(60);
+
 /// Sliding window used for the websocket uptime ratio.
 pub const WINDOW: Duration = Duration::from_secs(15 * 60);
 /// Minimum websocket uptime inside [`WINDOW`] to stay healthy.
@@ -50,6 +54,10 @@ pub const SCORE_DEGRADED: u8 = 0;
 pub enum HealthReason {
     /// Everything looks fine.
     Healthy,
+    /// No VRChat session has been established since this process started.
+    NotLoggedIn,
+    /// A session existed but the websocket is down right now.
+    Disconnected,
     /// VRChat websocket repeatedly dropped inside the window.
     WebsocketUnstable,
     /// VRChat rejected the session (needs a re-login).
@@ -65,6 +73,8 @@ impl HealthReason {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Healthy => "healthy",
+            Self::NotLoggedIn => "notLoggedIn",
+            Self::Disconnected => "disconnected",
             Self::WebsocketUnstable => "websocketUnstable",
             Self::AuthExpired => "authExpired",
             Self::SyncFailing => "syncFailing",
@@ -76,7 +86,9 @@ impl HealthReason {
 /// Point-in-time view handed to the heartbeat and to the election.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HealthSnapshot {
-    /// 0 when degraded, 100 when healthy.
+    /// Whether this device may record live feed right now.
+    pub eligible: bool,
+    /// Reported to peers: 100 when eligible, 0 otherwise.
     pub score: u8,
     /// Machine-readable reason (see [`HealthReason::as_str`]).
     pub reason: &'static str,
@@ -91,8 +103,9 @@ pub struct HealthSnapshot {
 impl Default for HealthSnapshot {
     fn default() -> Self {
         Self {
-            score: SCORE_HEALTHY,
-            reason: HealthReason::Healthy.as_str(),
+            eligible: false,
+            score: SCORE_DEGRADED,
+            reason: HealthReason::NotLoggedIn.as_str(),
             websocket_ok: true,
             cycle_failures: 0,
             uptime_pct: 100,
@@ -101,15 +114,19 @@ impl Default for HealthSnapshot {
 }
 
 impl HealthSnapshot {
-    /// Whether this device may collect at all.
+    /// Whether this device may collect at all (same as [`Self::eligible`]).
     pub fn is_healthy(&self) -> bool {
-        self.score > 0
+        self.eligible
     }
 }
 
 #[derive(Debug)]
 struct Inner {
     websocket_ok: bool,
+    /// True when the socket is up right now (not a window average).
+    connected_now: bool,
+    /// True once any successful connection happened in this process.
+    session_ever_connected: bool,
     /// Start of the current uptime bucket; `ok_acc`/`fail_acc` hold the rest.
     bucket_start: Instant,
     ok_acc: Duration,
@@ -123,9 +140,16 @@ struct Inner {
 impl Default for Inner {
     fn default() -> Self {
         Self {
-            websocket_ok: true,
+            // Start from "not connected": a device that has not proven it has a
+            // live VRChat session must not win the election. Fail-closed here is
+            // the safe direction - an un-logged-in desktop would otherwise sit at
+            // "healthy", take collection from a working server, and record
+            // nothing for hours.
+            websocket_ok: false,
+            connected_now: false,
+            session_ever_connected: false,
             bucket_start: Instant::now(),
-            ok_acc: WINDOW,
+            ok_acc: Duration::ZERO,
             fail_acc: Duration::ZERO,
             auth_expired: false,
             cycle_failures: 0,
@@ -168,6 +192,8 @@ impl Inner {
         }
     }
 
+    /// Minimum accumulated history before the sliding window is trusted; below
+    /// it the current socket state is the only honest signal.
     fn uptime_pct(&self, now: Instant) -> u32 {
         let mut ok = self.ok_acc;
         let mut fail = self.fail_acc;
@@ -178,8 +204,13 @@ impl Inner {
             fail += elapsed;
         }
         let total = ok + fail;
-        if total.is_zero() {
-            return 100;
+        if total < MIN_UPTIME_HISTORY {
+            // Too little history to judge: report the present, not a ratio.
+            return if self.websocket_ok && !self.auth_expired {
+                100
+            } else {
+                0
+            };
         }
         ((ok.as_millis() * 100) / total.as_millis()).min(100) as u32
     }
@@ -205,15 +236,19 @@ pub fn record_websocket_status(status: &str, reason: Option<&str>) {
         match status.as_str() {
             "connected" => {
                 inner.websocket_ok = true;
+                inner.connected_now = true;
+                inner.session_ever_connected = true;
                 inner.auth_expired = false;
             }
             "authfailure" => {
                 // Session rejected: no amount of reconnecting helps.
                 inner.websocket_ok = false;
+                inner.connected_now = false;
                 inner.auth_expired = true;
             }
             "disconnected" | "disconnecting" | "stopped" => {
                 inner.websocket_ok = false;
+                inner.connected_now = false;
                 if reason.is_some_and(|r| r.to_ascii_lowercase().contains("auth")) {
                     inner.auth_expired = true;
                 }
@@ -243,58 +278,45 @@ pub fn snapshot() -> HealthSnapshot {
         inner.settle(now);
         let uptime_pct = inner.uptime_pct(now);
 
-        let failing_reason = if inner.auth_expired {
-            Some(HealthReason::AuthExpired)
-        } else if inner.cycle_failures >= MAX_CYCLE_FAILURES {
-            Some(HealthReason::SyncFailing)
+        // Eligibility answers one question: can this device record live feed
+        // *now*? It only depends on the VRChat session. Sync failures are a
+        // different capability (reaching PostgreSQL) and are reported through
+        // `reason` without taking collection away from a working device.
+        let eligible = inner.connected_now && !inner.auth_expired;
+
+        let reason = if inner.auth_expired {
+            HealthReason::AuthExpired
+        } else if !inner.session_ever_connected {
+            HealthReason::NotLoggedIn
+        } else if !inner.connected_now {
+            HealthReason::Disconnected
         } else if uptime_pct < MIN_UPTIME_PCT {
-            Some(HealthReason::WebsocketUnstable)
+            HealthReason::WebsocketUnstable
+        } else if inner.cycle_failures >= MAX_CYCLE_FAILURES {
+            // Can record, but the database keeps failing: surface it without
+            // handing collection to a device that cannot record at all.
+            HealthReason::SyncFailing
         } else {
-            None
+            HealthReason::Healthy
         };
 
-        match failing_reason {
-            Some(reason) => {
-                inner.degraded_since.get_or_insert(now);
-                inner.healthy_since = None;
-                HealthSnapshot {
-                    score: SCORE_DEGRADED,
-                    reason: reason.as_str(),
-                    websocket_ok: inner.websocket_ok,
-                    cycle_failures: inner.cycle_failures,
-                    uptime_pct,
-                }
-            }
-            None => {
-                // Recovering: hold the degraded score until the signal has been
-                // clean for RECOVER_STABLE_SECS.
-                let recovering = match inner.degraded_since {
-                    None => false,
-                    Some(since) => {
-                        let stable = now.saturating_duration_since(since);
-                        stable < Duration::from_secs(RECOVER_STABLE_SECS)
-                    }
-                };
-                if recovering {
-                    HealthSnapshot {
-                        score: SCORE_DEGRADED,
-                        reason: HealthReason::Recovering.as_str(),
-                        websocket_ok: inner.websocket_ok,
-                        cycle_failures: inner.cycle_failures,
-                        uptime_pct,
-                    }
-                } else {
-                    inner.degraded_since = None;
-                    inner.healthy_since.get_or_insert(now);
-                    HealthSnapshot {
-                        score: SCORE_HEALTHY,
-                        reason: HealthReason::Healthy.as_str(),
-                        websocket_ok: inner.websocket_ok,
-                        cycle_failures: inner.cycle_failures,
-                        uptime_pct,
-                    }
-                }
-            }
+        if eligible {
+            inner.degraded_since = None;
+        } else {
+            inner.degraded_since.get_or_insert(now);
+        }
+
+        HealthSnapshot {
+            score: if eligible {
+                SCORE_HEALTHY
+            } else {
+                SCORE_DEGRADED
+            },
+            eligible,
+            reason: reason.as_str(),
+            websocket_ok: inner.websocket_ok,
+            cycle_failures: inner.cycle_failures,
+            uptime_pct,
         }
     })
 }
@@ -326,12 +348,23 @@ mod tests {
     }
 
     #[test]
-    fn defaults_to_healthy() {
+    fn without_a_session_the_device_is_not_eligible() {
+        // Nothing has proven there is a live VRChat session yet, so this device
+        // must not take collection from a peer that can actually record.
         let _guard = setup();
         let health = snapshot();
-        assert_eq!(health.score, SCORE_HEALTHY);
-        assert_eq!(health.reason, HealthReason::Healthy.as_str());
+        assert!(!health.is_healthy());
+        assert_eq!(health.score, SCORE_DEGRADED);
+        assert_eq!(health.reason, HealthReason::NotLoggedIn.as_str());
+    }
+
+    #[test]
+    fn connecting_without_history_counts_as_healthy_immediately() {
+        let _guard = setup();
+        record_websocket_status("connected", None);
+        let health = snapshot();
         assert!(health.is_healthy());
+        assert_eq!(health.uptime_pct, 100);
     }
 
     #[test]
@@ -348,33 +381,39 @@ mod tests {
     }
 
     #[test]
-    fn three_failed_cycles_degrade_and_one_success_does_not_recover_yet() {
+    fn sync_failures_are_reported_without_taking_collection_away() {
         let _guard = setup();
+        record_websocket_status("connected", None);
         record_sync_cycle(false);
         record_sync_cycle(false);
         assert!(snapshot().is_healthy(), "two failures are tolerated");
         record_sync_cycle(false);
         let degraded = snapshot();
-        assert_eq!(degraded.score, SCORE_DEGRADED);
         assert_eq!(degraded.reason, HealthReason::SyncFailing.as_str());
+        assert!(degraded.is_healthy(), "still allowed to record");
 
-        record_sync_cycle(true);
-        let recovering = snapshot();
+        let after = snapshot();
         assert_eq!(
-            recovering.reason,
-            HealthReason::Recovering.as_str(),
-            "hysteresis holds the degraded score until the window elapses"
+            after.reason,
+            HealthReason::SyncFailing.as_str(),
+            "the database problem is still visible"
         );
-        assert!(!recovering.is_healthy());
+        assert!(
+            after.is_healthy(),
+            "but reaching PostgreSQL is a different capability: a device that can \
+             record must keep recording while sync retries"
+        );
     }
 
     #[test]
-    fn disconnected_websocket_does_not_flip_health_before_the_window() {
+    fn disconnecting_flips_to_unstable_when_there_is_little_history() {
         let _guard = setup();
+        record_websocket_status("connected", None);
+        assert!(snapshot().is_healthy());
         record_websocket_status("disconnected", None);
-        // The window still remembers plenty of uptime.
         let health = snapshot();
-        assert_eq!(health.score, SCORE_HEALTHY);
+        assert_eq!(health.score, SCORE_DEGRADED);
+        assert_eq!(health.reason, HealthReason::Disconnected.as_str());
         assert!(!health.websocket_ok);
     }
 

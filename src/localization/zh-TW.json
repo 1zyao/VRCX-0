@@ -3351,6 +3351,8 @@
                     "pending_outbox": "待上傳 {{count}} 條",
                     "health_healthy": "正常",
                     "health_websocketUnstable": "連線不穩定",
+                    "health_disconnected": "已斷開連線",
+                    "health_notLoggedIn": "未登入",
                     "health_authExpired": "登入已過期",
                     "health_syncFailing": "同步連續失敗",
                     "health_recovering": "恢復中",
