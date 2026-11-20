@@ -371,6 +371,14 @@ impl BackendRuntimeStatusPublisher {
     }
 
     pub fn publish_realtime_ws_status(&self, payload: RealtimeWsStatusPayload) {
+        // Feed the collector election from the authoritative source. Hooking the
+        // output formatter instead only worked in background mode, so a desktop
+        // with a live websocket could still report "not logged in" and hand
+        // collection to a peer that had no session at all.
+        vrcx_0_contracts::collector_health::record_websocket_status(
+            payload.status.as_str(),
+            payload.reason.as_deref(),
+        );
         let snapshot = self.runtime.set_ws_status(payload.status);
         let detail = payload.status.as_str();
         self.event_bus.emit(payload);
