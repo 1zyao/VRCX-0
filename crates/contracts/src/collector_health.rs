@@ -22,7 +22,6 @@
 //! | sync cycle | last cycle ok | ≥ 3 consecutive failures |
 //!
 //! Recovery is asymmetric on purpose: degradation is immediate, recovery needs
-//! [`RECOVER_STABLE_SECS`] of unbroken health. Without that hysteresis two nodes
 //! would hand collection back and forth every few seconds.
 //!
 //! Failure direction matches the rest of the election: unknown state counts as
@@ -43,7 +42,6 @@ pub const MIN_UPTIME_PCT: u32 = 60;
 /// Consecutive failed sync cycles that mark the device unhealthy.
 pub const MAX_CYCLE_FAILURES: u32 = 3;
 /// How long everything must stay healthy before a degraded device recovers.
-pub const RECOVER_STABLE_SECS: u64 = 120;
 /// Score reported while healthy.
 pub const SCORE_HEALTHY: u8 = 100;
 /// Score reported while degraded.
@@ -134,7 +132,6 @@ struct Inner {
     auth_expired: bool,
     cycle_failures: u32,
     degraded_since: Option<Instant>,
-    healthy_since: Option<Instant>,
 }
 
 impl Default for Inner {
@@ -154,7 +151,6 @@ impl Default for Inner {
             auth_expired: false,
             cycle_failures: 0,
             degraded_since: None,
-            healthy_since: None,
         }
     }
 }
@@ -322,7 +318,10 @@ pub fn snapshot() -> HealthSnapshot {
 }
 
 /// Test support: wipe all accumulated signals.
-#[cfg(test)]
+///
+/// Public (not `cfg(test)`) so integration tests in other crates can start from
+/// a known state; production code never calls it.
+#[doc(hidden)]
 pub fn reset_for_tests() {
     let mut guard = STATE
         .lock()

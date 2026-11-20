@@ -456,6 +456,69 @@ mod tests {
         );
     }
 
+    /// Guards the one store these tests mutate.
+    static HEALTH_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn ws_status(status: RealtimeWsStatus) -> RealtimeWsStatusPayload {
+        RealtimeWsStatusPayload {
+            status,
+            websocket_domain: "pipeline.vrchat.cloud".into(),
+            at: "2026-01-01T00:00:00Z".into(),
+            client_run_id: Some(1),
+            generation: Some(1),
+            session_generation: Some(1),
+            reason: None,
+            status_code: None,
+        }
+    }
+
+    // The election reads a process-wide signal, and the hook that feeds it has
+    // been moved once already (from the output formatter, which only runs in
+    // background mode). These two tests pin the wiring at the publisher, so a
+    // future move has to prove the signal still arrives.
+    #[test]
+    fn publishing_a_connected_status_makes_the_device_eligible() {
+        let _guard = HEALTH_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        vrcx_0_contracts::collector_health::reset_for_tests();
+        let publisher = BackendRuntimeStatusPublisher::new(
+            BackendRuntime::new(RuntimeHostProfile::Desktop),
+            RuntimeEventBus::new(),
+        );
+
+        let before = vrcx_0_contracts::collector_health::snapshot();
+        assert!(!before.is_healthy(), "nothing has proven a session yet");
+        assert_eq!(before.reason, "notLoggedIn");
+
+        publisher.publish_realtime_ws_status(ws_status(RealtimeWsStatus::Connected));
+
+        let after = vrcx_0_contracts::collector_health::snapshot();
+        assert!(after.is_healthy(), "a live websocket must make it eligible");
+        assert_eq!(after.reason, "healthy");
+    }
+
+    #[test]
+    fn publishing_a_disconnect_withdraws_eligibility() {
+        let _guard = HEALTH_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        vrcx_0_contracts::collector_health::reset_for_tests();
+        let publisher = BackendRuntimeStatusPublisher::new(
+            BackendRuntime::new(RuntimeHostProfile::Desktop),
+            RuntimeEventBus::new(),
+        );
+
+        publisher.publish_realtime_ws_status(ws_status(RealtimeWsStatus::Connected));
+        assert!(vrcx_0_contracts::collector_health::snapshot().is_healthy());
+
+        publisher.publish_realtime_ws_status(ws_status(RealtimeWsStatus::Disconnected));
+
+        let after = vrcx_0_contracts::collector_health::snapshot();
+        assert!(!after.is_healthy(), "a dropped socket must stop recording");
+        assert_eq!(after.reason, "disconnected");
+    }
+
     #[test]
     fn game_log_publisher_updates_state_before_transport_payload() {
         let runtime = BackendRuntime::new(RuntimeHostProfile::Desktop);
