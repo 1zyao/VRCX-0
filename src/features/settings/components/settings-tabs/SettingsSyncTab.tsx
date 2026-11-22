@@ -23,12 +23,6 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import {
-    collectorRank,
-    deviceHealth,
-    normaliseReason,
-    writingDeviceIds as computeWritingDeviceIds
-} from '@/shared/utils/syncViewModel';
 import { cn } from '@/lib/utils';
 import type {
     SyncBootstrapProgress,
@@ -46,6 +40,12 @@ import {
     triggerSyncNow
 } from '@/repositories/syncRepository';
 import { toast } from '@/services/toastService';
+import {
+    collectorRank,
+    deviceHealth,
+    normaliseReason,
+    writingDeviceIds as computeWritingDeviceIds
+} from '@/shared/utils/syncViewModel';
 import { useSyncStatusStore } from '@/state/syncStatusStore';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';

@@ -7,12 +7,12 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import { cn } from '@/lib/utils';
 import {
     normaliseReason,
     syncSeverity,
     type SyncSeverity
 } from '@/shared/utils/syncViewModel';
-import { cn } from '@/lib/utils';
 import { useRuntimeStore } from '@/state/runtimeStore';
 import { useSyncStatusStore } from '@/state/syncStatusStore';
 import { Button } from '@/ui/shadcn/button';

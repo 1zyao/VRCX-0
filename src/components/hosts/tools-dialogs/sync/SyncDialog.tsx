@@ -11,12 +11,6 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
-import {
-    collectorRank,
-    deviceHealth,
-    normaliseReason,
-    writingDeviceIds
-} from '@/shared/utils/syncViewModel';
 import type { SyncDeviceRecord } from '@/platform/tauri/bindings';
 import {
     configureSync,
@@ -24,6 +18,12 @@ import {
     triggerSyncNow
 } from '@/repositories/syncRepository';
 import { toast } from '@/services/toastService';
+import {
+    collectorRank,
+    deviceHealth,
+    normaliseReason,
+    writingDeviceIds
+} from '@/shared/utils/syncViewModel';
 import { useSyncStatusStore } from '@/state/syncStatusStore';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';

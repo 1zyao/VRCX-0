@@ -66,9 +66,7 @@ export function deviceHealthy(device: {
  * writer. Mirrors `collector_election::may_collect`: online, healthy, then
  * priority desc, then the smaller device id wins ties.
  */
-export function rankFeedWriters(
-    devices: SyncDeviceLike[]
-): SyncDeviceLike[] {
+export function rankFeedWriters(devices: SyncDeviceLike[]): SyncDeviceLike[] {
     return devices
         .filter((device) => device.online && deviceHealthy(device))
         .sort(
