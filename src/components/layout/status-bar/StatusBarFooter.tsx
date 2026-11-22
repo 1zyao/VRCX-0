@@ -24,9 +24,9 @@ import {
 } from './GameSegments';
 import { NowPlayingSegment } from './NowPlayingSegment';
 import { OfflineRecordIndicator } from './OfflineRecordIndicator';
-import { SyncStatusIndicator } from './SyncStatusIndicator';
 import { ProxySegment } from './ProxySegment';
 import type { StatusBarFooterProps } from './statusBarTypes';
+import { SyncStatusIndicator } from './SyncStatusIndicator';
 import { AppUptimeSegment, ClocksSegment } from './TimeSegments';
 import { ZoomSegment } from './ZoomSegment';
 

@@ -161,14 +161,14 @@ Cloud  POST /api/invoke {cmd,args}      事件 = WS /api/events
 
 ## 5. 已知坑（都会咬人）
 
-| 现象 | 原因 / 处理 |
-|---|---|
-| `export-bindings` 报 `Failed to write … .raw.ts: 拒绝访问 (os error 5)` | `%TEMP%` 权限问题 → 先把 `$env:TEMP` 指到 `D:\vrcx0\tmp` |
-| `bindings.ts` 改了没生效 / 被覆盖 | 它是生成物；只改它会被下次导出覆盖，改契约才是根源 |
-| `cargo build --release -p vrcx-0` 出的 exe 白屏、连 `localhost:9000` | 没走 `tauri build`，前端资源没嵌入 → 必须 `npx tauri build`（可加 `--no-bundle`） |
-| 构建极慢（10~15 分钟） | `[profile.release]` 是 `lto = true` + `codegen-units = 1`（发布档，别为了迭代改它）。改界面用 `npx tauri dev` |
-| 链接器 | 用 `set CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=C:\Program Files\LLVM\bin\lld-link.exe` |
-| `openvr_sys` 构建报 `LNK1104: 无法打开 …openvr_api64.lib` | 搬目录后 cmake 缓存失效 + 并行抢写；先单独 `cmake --build target\release\build\openvr_sys-*\out\build --target openvr_api64 --config MinSizeRel`，再正常构建 |
+| 现象                                                                    | 原因 / 处理                                                                                                                                                  |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `export-bindings` 报 `Failed to write … .raw.ts: 拒绝访问 (os error 5)` | `%TEMP%` 权限问题 → 先把 `$env:TEMP` 指到 `D:\vrcx0\tmp`                                                                                                     |
+| `bindings.ts` 改了没生效 / 被覆盖                                       | 它是生成物；只改它会被下次导出覆盖，改契约才是根源                                                                                                           |
+| `cargo build --release -p vrcx-0` 出的 exe 白屏、连 `localhost:9000`    | 没走 `tauri build`，前端资源没嵌入 → 必须 `npx tauri build`（可加 `--no-bundle`）                                                                            |
+| 构建极慢（10~15 分钟）                                                  | `[profile.release]` 是 `lto = true` + `codegen-units = 1`（发布档，别为了迭代改它）。改界面用 `npx tauri dev`                                                |
+| 链接器                                                                  | 用 `set CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=C:\Program Files\LLVM\bin\lld-link.exe`                                                                   |
+| `openvr_sys` 构建报 `LNK1104: 无法打开 …openvr_api64.lib`               | 搬目录后 cmake 缓存失效 + 并行抢写；先单独 `cmake --build target\release\build\openvr_sys-*\out\build --target openvr_api64 --config MinSizeRel`，再正常构建 |
 
 完整环境与构建说明见 `D:\vrcx0\README.md`。
 

@@ -25,6 +25,13 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import {
+    collectorRank,
+    deviceHealth,
+    deviceHealthy,
+    normaliseReason,
+    writingDeviceIds as computeWritingDeviceIds
+} from '@/features/settings/lib/syncViewModel';
 import type {
     SyncBootstrapProgress,
     SyncConnectionTestResult,
@@ -42,13 +49,6 @@ import {
 } from '@/repositories/syncRepository';
 import { toast } from '@/services/toastService';
 import { useSyncStatusStore } from '@/state/syncStatusStore';
-import {
-    collectorRank,
-    deviceHealth,
-    deviceHealthy,
-    normaliseReason,
-    writingDeviceIds as computeWritingDeviceIds
-} from '@/features/settings/lib/syncViewModel';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import { FieldLabel } from '@/ui/shadcn/field';
@@ -352,7 +352,9 @@ export function SettingsSyncTab() {
     // `collector_election::blockers` on the Rust side, so the badge matches what
     // the engine actually decided. A legacy `forced` row without a number ranks
     // as priority 1000 there, so it does here too.
-    const writerDeviceIds = computeWritingDeviceIds(status?.remoteDevices ?? []);
+    const writerDeviceIds = computeWritingDeviceIds(
+        status?.remoteDevices ?? []
+    );
 
     return (
         <SettingsTabContent value="sync">
