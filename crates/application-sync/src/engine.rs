@@ -680,7 +680,7 @@ impl RemoteSyncEngine {
         let tables_before = state.table_index;
         self.set_progress(|progress| {
             progress.running = true;
-            progress.rows_total = state.rows_total.max(progress.rows_total as i64);
+            progress.rows_total = state.rows_total.max(progress.rows_total);
             progress.tables_total = state.tables.len() as u32;
             progress.tables_done = state.table_index as u32;
             progress.phase = state.phase.clone();

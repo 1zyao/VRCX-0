@@ -530,7 +530,6 @@ impl ToSql for PgValue {
                 <Value as ToSql>::to_sql(value, &tokio_postgres::types::Type::JSONB, out)
             }
         }
-        .map_err(Into::into)
     }
 
     fn accepts(_ty: &tokio_postgres::types::Type) -> bool {
@@ -1163,7 +1162,7 @@ fn pg_row_value(
         tokio_postgres::types::Type::BOOL => row
             .try_get::<_, Option<bool>>(index)
             .map_err(pg_error)?
-            .map(|v| Value::from(v)),
+            .map(Value::from),
         _ => row
             .try_get::<_, Option<String>>(index)
             .map_err(pg_error)?
@@ -1506,7 +1505,10 @@ mod pg_smoke {
                 .expect("push");
 
             // Re-push is idempotent by op id.
-            store.push_ops(&[set_op.clone()]).await.expect("repush");
+            store
+                .push_ops(std::slice::from_ref(&set_op))
+                .await
+                .expect("repush");
 
             let pulled = store.fetch_ops(0, 10).await.expect("fetch ops");
             assert_eq!(pulled.len(), 2, "op log contains exactly the two ops");

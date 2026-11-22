@@ -72,7 +72,7 @@ fn three_replicas() -> Vec<Replica> {
 
 /// Deliver every replica's pending ops to all others, rotating the delivery
 /// order each round, until nothing is pending anywhere.
-fn gossip_until_quiet(replicas: &mut Vec<Replica>, rounds: usize) {
+fn gossip_until_quiet(replicas: &mut [Replica], rounds: usize) {
     let orders: Vec<Vec<usize>> = vec![vec![0, 1, 2], vec![2, 0, 1], vec![1, 2, 0]];
     for round in 0..rounds {
         let order = orders[round % orders.len()].clone();
@@ -104,7 +104,7 @@ fn gossip_until_quiet(replicas: &mut Vec<Replica>, rounds: usize) {
                         stats.skipped_pending,
                         stats.skipped_stale,
                         stats.skipped_missing,
-                        ops.iter().map(|o| (o.kind.clone(), o.hlc.clone())).collect::<Vec<_>>()
+                        ops.iter().map(|o| (o.kind, o.hlc.clone())).collect::<Vec<_>>()
                     );
                 }
             }

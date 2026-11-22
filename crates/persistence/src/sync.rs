@@ -483,7 +483,7 @@ fn derive_key_columns(
             let unique = row.get(2).and_then(Value::as_i64).unwrap_or(0) == 1;
             let name = row.get(1).and_then(Value::as_str).map(str::to_string)?;
             let seq = row.first().and_then(Value::as_i64).unwrap_or(0);
-            Some((seq, name)).filter(|_| unique)
+            unique.then_some((seq, name))
         })
         .collect();
     unique_indexes.sort();
@@ -929,6 +929,9 @@ pub fn outbox_take(
     })
 }
 
+// The op derivation needs every part of the row context; a params struct
+// here would only move the same eight values one level down.
+#[allow(clippy::too_many_arguments)]
 fn derive_set_ops(
     tx: &crate::database::DatabaseWriteTransaction<'_>,
     seq: i64,

@@ -2,10 +2,8 @@ import {
     ArrowDownIcon,
     ArrowUpIcon,
     CheckCircle2Icon,
-    ChevronDownIcon,
     CloudCogIcon,
     DatabaseIcon,
-    ExternalLinkIcon,
     HistoryIcon,
     LaptopIcon,
     RefreshCwIcon,
@@ -28,10 +26,9 @@ import { useTranslation } from 'react-i18next';
 import {
     collectorRank,
     deviceHealth,
-    deviceHealthy,
     normaliseReason,
     writingDeviceIds as computeWritingDeviceIds
-} from '@/features/settings/lib/syncViewModel';
+} from '@/shared/utils/syncViewModel';
 import { cn } from '@/lib/utils';
 import type {
     SyncBootstrapProgress,
@@ -332,9 +329,6 @@ export function SettingsSyncTab() {
     const canTest = host.trim().length > 0 && database.trim().length > 0;
     // Offline devices linger in the presence table until they age out of the
     // database; hiding them keeps the list to peers that can actually sync.
-    const onlineDevices = status
-        ? status.remoteDevices.filter((device) => device.online)
-        : [];
 
     // The list shows every known device, online first: a machine that is simply
     // switched off still explains why it is not the writer. Stale rows linger in

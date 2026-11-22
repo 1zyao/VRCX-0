@@ -259,7 +259,7 @@ pub(crate) fn feed_recent_duplicate_exists(
     let mut clauses = Vec::with_capacity(columns.len() + 1);
     for (name, value) in &columns {
         clauses.push(format!("{name} = @{name}"));
-        params = params.set(*name, value.clone());
+        params = params.set(name, value.clone());
     }
     params = params
         .set("created_at", entry.created_at().to_string())
@@ -293,7 +293,7 @@ fn backfilled_entry_table_if_new(
         .join(" AND ");
     let mut params = ParamsBuilder::new();
     for (name, value) in &columns {
-        params = params.set(*name, value.clone());
+        params = params.set(name, value.clone());
     }
     let mut params = params
         .set("created_at", entry.created_at().to_string())

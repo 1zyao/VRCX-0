@@ -11,7 +11,7 @@ import {
     normaliseReason,
     syncSeverity,
     type SyncSeverity
-} from '@/features/settings/lib/syncViewModel';
+} from '@/shared/utils/syncViewModel';
 import { cn } from '@/lib/utils';
 import { useRuntimeStore } from '@/state/runtimeStore';
 import { useSyncStatusStore } from '@/state/syncStatusStore';

@@ -16,7 +16,7 @@ import {
     deviceHealth,
     normaliseReason,
     writingDeviceIds
-} from '@/features/settings/lib/syncViewModel';
+} from '@/shared/utils/syncViewModel';
 import type { SyncDeviceRecord } from '@/platform/tauri/bindings';
 import {
     configureSync,

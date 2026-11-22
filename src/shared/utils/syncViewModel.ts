@@ -1,4 +1,20 @@
-import type { SyncDeviceRecord } from '@/platform/tauri/bindings';
+/**
+ * The device fields this module needs. Declared structurally instead of
+ * importing the generated binding: shared/domain code must not depend on higher
+ * frontend layers (oxlint enforces that), and these helpers only read a few
+ * fields.
+ */
+export type SyncDeviceLike = {
+    deviceId: string;
+    role?: string;
+    priority?: number;
+    health?: number;
+    healthReason?: string;
+    online?: boolean;
+    lastSeenAt?: string | null;
+    appVersion?: string;
+    deviceName?: string;
+};
 
 /**
  * Shared view-model helpers for everything that renders sync state.
@@ -51,8 +67,8 @@ export function deviceHealthy(device: {
  * priority desc, then the smaller device id wins ties.
  */
 export function rankFeedWriters(
-    devices: SyncDeviceRecord[]
-): SyncDeviceRecord[] {
+    devices: SyncDeviceLike[]
+): SyncDeviceLike[] {
     return devices
         .filter((device) => device.online && deviceHealthy(device))
         .sort(
@@ -63,7 +79,7 @@ export function rankFeedWriters(
 }
 
 /** Device ids the UI should badge as "writing now" (at most one). */
-export function writingDeviceIds(devices: SyncDeviceRecord[]): Set<string> {
+export function writingDeviceIds(devices: SyncDeviceLike[]): Set<string> {
     const [writer] = rankFeedWriters(devices);
     return new Set(writer ? [writer.deviceId] : []);
 }

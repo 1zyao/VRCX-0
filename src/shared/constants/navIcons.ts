@@ -12,6 +12,7 @@ export interface NavIconOption {
 
 const navIconEntries: Array<readonly [NavIconKey, string]> = [
     ['lucide:Circle', 'Circle'],
+    ['lucide:CloudCog', 'Cloud Cog'],
     ['lucide:Rss', 'RSS'],
     ['lucide:MapPin', 'Map Pin'],
     ['lucide:History', 'History'],

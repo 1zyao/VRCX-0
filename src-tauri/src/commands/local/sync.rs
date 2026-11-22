@@ -138,12 +138,12 @@ pub async fn sync__forget_device(
 #[tauri::command(async)]
 #[specta::specta]
 pub async fn sync__trigger_now(state: State<'_, AppState>) -> Result<SyncStatusSnapshot, AppError> {
-    Ok(state
+    state
         .runtime_host()
         .remote_sync()
         .run_cycle_now()
         .await
-        .map_err(AppError::from)?)
+        .map_err(AppError::from)
 }
 
 #[tauri::command(async)]
