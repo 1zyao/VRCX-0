@@ -1224,6 +1224,40 @@ fn backfill_only_treats_rows_from_before_the_current_sync_as_duplicates() -> Res
     Ok(())
 }
 
+/// The collector gate is process-wide, so this test owns it briefly and puts it
+/// back immediately; nothing else in this binary touches it.
+static COLLECTOR_GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[test]
+fn backfill_obeys_the_collector_election() -> Result<(), crate::Error> {
+    let _guard = COLLECTOR_GATE
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let dir = TestDir::new("realtime-feed-backfill-gate");
+    let db = DatabaseService::new(&dir.path.join("VRCX-0.sqlite3"))?;
+    let owner = OwnerId::new("usr_self");
+    let entry = online_entry("2026-05-15T00:00:00Z", "wrld_1:1", "World");
+
+    vrcx_0_contracts::set_live_feed_collector(false);
+    let yielded = insert_backfilled_feed(
+        &db,
+        &owner,
+        std::slice::from_ref(&entry),
+        &[],
+        &mut BackfillWrites::default(),
+    );
+    vrcx_0_contracts::set_live_feed_collector(true);
+    let recorded =
+        insert_backfilled_feed(&db, &owner, &[entry], &[], &mut BackfillWrites::default());
+
+    assert_eq!(
+        yielded?, 0,
+        "a device that yielded must not replay the feed it did not collect"
+    );
+    assert_eq!(recorded?, 1, "the elected collector still backfills");
+    Ok(())
+}
+
 #[test]
 fn backfill_matches_duplicates_across_time_formats_only_inside_the_window(
 ) -> Result<(), crate::Error> {

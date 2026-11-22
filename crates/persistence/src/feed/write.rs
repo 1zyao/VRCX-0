@@ -57,6 +57,14 @@ pub fn insert_backfilled_feed(
             "Feed backfill requires a current user id.".into(),
         ));
     }
+    // Replayed offline-logger frames are an *observation* of the live feed, so
+    // they have to obey the same election as live writes. Without this gate a
+    // device that had already yielded still replayed its own frames, and every
+    // event the collector recorded came back a second later as a second row:
+    // `created_at` is part of the row identity, so nothing could merge them.
+    if !vrcx_0_contracts::is_live_feed_collector() {
+        return Ok(0);
+    }
     let user_prefix =
         crate::profile_bio::ensure_profile_bio_table(db, &OwnerId::new(owner_user_id))?;
     ensure_realtime_tables(db, &user_prefix)?;
