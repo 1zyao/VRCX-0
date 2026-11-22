@@ -554,6 +554,10 @@ fn a_second_observer_of_the_same_feed_event_is_skipped() -> Result<(), crate::Er
 
 #[test]
 fn display_name_change_on_update_writes_display_name_history() -> Result<(), crate::Error> {
+    let _guard = COLLECTOR_GATE
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    vrcx_0_contracts::set_live_feed_collector(true);
     let dir = TestDir::new("realtime-display-name-change");
     let db = DatabaseService::new(&dir.path.join("VRCX-0.sqlite3"))?;
 
