@@ -275,6 +275,13 @@ impl RemoteSyncHost {
             last_pulled_ops: 0,
             last_cycle_at: None,
             last_cycle_tables: Vec::new(),
+            server_clock_offset_ms: vrcx_0_persistence::sync::sync_meta_get(
+                &self.db,
+                "sync.serverClockOffsetMs",
+            )
+            .ok()
+            .flatten()
+            .and_then(|value| value.parse::<i64>().ok()),
             next_cycle_in_secs: None,
             cycle_history: Vec::new(),
             collector_health: vrcx_0_contracts::collector_health::snapshot().score as i64,

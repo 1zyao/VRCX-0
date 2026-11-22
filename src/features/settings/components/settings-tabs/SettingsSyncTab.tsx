@@ -32,6 +32,7 @@ import {
     normaliseReason,
     writingDeviceIds as computeWritingDeviceIds
 } from '@/features/settings/lib/syncViewModel';
+import { cn } from '@/lib/utils';
 import type {
     SyncBootstrapProgress,
     SyncConnectionTestResult,
@@ -613,6 +614,29 @@ export function SettingsSyncTab() {
                                     {t('view.settings.sync.status.next_sync', {
                                         secs: nextSyncCountdown
                                     })}
+                                </span>
+                            ) : null}
+                            {status.enabled &&
+                            status.serverClockOffsetMs != null ? (
+                                <span
+                                    className={cn(
+                                        'text-xs tabular-nums',
+                                        Math.abs(status.serverClockOffsetMs) <
+                                            2000
+                                            ? 'text-muted-foreground'
+                                            : 'text-amber-500'
+                                    )}
+                                    title={t(
+                                        'view.settings.sync.status.clock_hint'
+                                    )}
+                                >
+                                    {t(
+                                        'view.settings.sync.status.clock_offset'
+                                    )}{' '}
+                                    {(
+                                        status.serverClockOffsetMs / 1000
+                                    ).toFixed(1)}
+                                    s
                                 </span>
                             ) : null}
                         </div>

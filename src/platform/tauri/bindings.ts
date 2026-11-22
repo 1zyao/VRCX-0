@@ -7828,6 +7828,12 @@ export type SyncStatusSnapshot = {
     lastPulledOps?: number;
     lastCycleAt?: string | null;
     /**
+     *  Server clock minus this device's clock, in milliseconds. Row timestamps
+     *  are stamped locally, so a large value means de-duplication windows and
+     *  ordering between devices are comparing different clocks.
+     */
+    serverClockOffsetMs?: number | null;
+    /**
      *  Tables touched by the most recent completed cycle (sorted by name),
      *  empty when the cycle moved nothing.
      */

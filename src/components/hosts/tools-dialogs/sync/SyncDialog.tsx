@@ -247,6 +247,18 @@ export function SyncDialog({
                                             { count: status.lastPulledOps ?? 0 }
                                         )}
                                     />
+                                    <StatusCell
+                                        // Row timestamps are stamped locally; a
+                                        // skewed clock breaks de-duplication and
+                                        // ordering without any visible error.
+                                        label={t(
+                                            'view.settings.sync.status.clock_offset'
+                                        )}
+                                        value={formatClockOffset(
+                                            status.serverClockOffsetMs,
+                                            t
+                                        )}
+                                    />
                                 </div>
 
                                 <div className="text-xs">
@@ -345,6 +357,26 @@ export function SyncDialog({
             </DialogContent>
         </Dialog>
     );
+}
+
+/// One decimal is enough for "is this device's clock sane": anything under a
+/// couple of seconds is NTP-level noise, and the de-duplication window is 120s.
+function formatClockOffset(
+    offsetMs: number | null | undefined,
+    t: (key: string, options?: Record<string, unknown>) => string
+): string {
+    if (offsetMs === null || offsetMs === undefined) {
+        return t('view.settings.sync.status.clock_unknown');
+    }
+    const abs = Math.abs(offsetMs);
+    if (abs < 2000) {
+        return t('view.settings.sync.status.clock_ok', {
+            seconds: (offsetMs / 1000).toFixed(1)
+        });
+    }
+    return t('view.settings.sync.status.clock_skewed', {
+        seconds: (offsetMs / 1000).toFixed(1)
+    });
 }
 
 function StatusCell({ label, value }: { label: string; value: string }) {

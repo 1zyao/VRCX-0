@@ -70,6 +70,9 @@ const BOOTSTRAP_MATERIALIZED_PAGE: i64 = 1000;
 const GC_INTERVAL_HOURS: i64 = 24;
 /// Persistent timestamp of the most recent completed cycle (auto or manual).
 const META_LAST_CYCLE_AT: &str = "sync.lastCycleAt";
+/// Server clock minus this device's clock. Read by the status snapshot so a
+/// skewed clock is visible in the UI instead of only in broken ordering.
+const META_CLOCK_OFFSET_MS: &str = "sync.serverClockOffsetMs";
 /// Ring of the most recent completed cycles, JSON-encoded SyncCycleRecords.
 const META_CYCLE_HISTORY: &str = "sync.cycleHistory";
 const CYCLE_HISTORY_LEN: usize = 30;
@@ -426,6 +429,11 @@ impl RemoteSyncEngine {
 
     async fn cycle_inner(self: &Arc<Self>) -> EngineResult<CycleCounts> {
         self.reconcile_remote_epoch().await?;
+        // One extra scalar in the same connection the cycle already holds; it
+        // costs no additional round trip and makes clock skew observable.
+        if let Ok(Some(offset)) = self.store.server_clock_offset_ms().await {
+            let _ = sync_meta_set(&self.db, META_CLOCK_OFFSET_MS, &offset.to_string());
+        }
 
         let health = vrcx_0_contracts::collector_health::snapshot();
         // Register presence so other devices can list us, and advertise the
@@ -939,6 +947,10 @@ impl RemoteSyncEngine {
                 .is_empty();
         let last_push_at = sync_meta_get(&self.db, META_LAST_PUSH_AT).ok().flatten();
         let last_pull_at = sync_meta_get(&self.db, META_LAST_PULL_AT).ok().flatten();
+        let server_clock_offset_ms = sync_meta_get(&self.db, META_CLOCK_OFFSET_MS)
+            .ok()
+            .flatten()
+            .and_then(|value| value.parse::<i64>().ok());
         let remote_schema_version = sync_meta_get(&self.db, "sync.remoteSchemaVersion")
             .ok()
             .flatten()
@@ -986,6 +998,7 @@ impl RemoteSyncEngine {
             last_pulled_ops: stats.pulled,
             last_cycle_at,
             last_cycle_tables,
+            server_clock_offset_ms,
             next_cycle_in_secs,
             cycle_history: cycle_history_get(&self.db).unwrap_or_default(),
             phase,

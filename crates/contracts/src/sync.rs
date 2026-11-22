@@ -716,6 +716,11 @@ pub struct SyncStatusSnapshot {
     pub last_pulled_ops: u64,
     #[serde(default)]
     pub last_cycle_at: Option<String>,
+    /// Server clock minus this device's clock, in milliseconds. Row timestamps
+    /// are stamped locally, so a large value means de-duplication windows and
+    /// ordering between devices are comparing different clocks.
+    #[serde(default)]
+    pub server_clock_offset_ms: Option<i64>,
     /// Tables touched by the most recent completed cycle (sorted by name),
     /// empty when the cycle moved nothing.
     #[serde(default)]

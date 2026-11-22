@@ -84,6 +84,15 @@ pub trait RemoteSyncStore: Send + Sync {
     /// Connectivity + authentication probe with server version and latency.
     async fn test_connection(&self) -> SyncStoreResult<SyncConnectionTestResult>;
 
+    /// Server clock minus this device's clock, in milliseconds.
+    ///
+    /// Row timestamps are stamped by each client, so a skewed clock quietly
+    /// breaks de-duplication windows and ordering; reporting the difference
+    /// makes that visible before it corrupts anything.
+    async fn server_clock_offset_ms(&self) -> SyncStoreResult<Option<i64>> {
+        Ok(None)
+    }
+
     async fn server_meta_get(&self, key: &str) -> SyncStoreResult<Option<String>>;
     async fn server_meta_set(&self, key: &str, value: &str) -> SyncStoreResult<()>;
 

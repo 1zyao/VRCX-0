@@ -729,6 +729,28 @@ impl RemoteSyncStore for PostgresSyncStore {
         .await
     }
 
+    async fn server_clock_offset_ms(&self) -> SyncStoreResult<Option<i64>> {
+        let sent = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        let rows = self
+            .with_client(|client| async move {
+                let row = client
+                    .query_one("SELECT (extract(epoch from now()) * 1000)::bigint", &[])
+                    .await
+                    .map_err(pg_error)?;
+                Ok((row.get::<_, i64>(0), client))
+            })
+            .await?;
+        let received = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        // Midpoint of the round trip, like the offline recorder's calibration.
+        Ok(Some(rows - (sent + received) / 2))
+    }
+
     async fn push_ops(&self, ops: &[SyncOpRecord]) -> SyncStoreResult<()> {
         if ops.is_empty() {
             return Ok(());
