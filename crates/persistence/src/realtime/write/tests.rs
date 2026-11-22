@@ -399,6 +399,159 @@ fn force_history_false_skips_friend_history_on_update() -> Result<(), crate::Err
     Ok(())
 }
 
+/// Guards the friend-log duplicate the user hit: the same rename observed twice,
+/// either by a second client or after a peer reverted the synced current row.
+
+#[test]
+fn repeating_a_rename_does_not_append_a_second_history_entry() -> Result<(), crate::Error> {
+    let _guard = COLLECTOR_GATE
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    vrcx_0_contracts::set_live_feed_collector(true);
+    let dir = TestDir::new("realtime-friend-log-repeat");
+    let db = DatabaseService::new(&dir.path.join("VRCX-0.sqlite3"))?;
+    let upsert = |name: &str, at: &str| RealtimePersistenceBatch {
+        friend_log_upserts: vec![FriendLogUpsert {
+            target_user_id: "usr_friend".into(),
+            display_name: name.into(),
+            trust_level: "Known".into(),
+            friend_number: 12,
+            created_at: at.into(),
+            force_history: false,
+        }],
+        ..RealtimePersistenceBatch::default()
+    };
+
+    write_realtime_batch(
+        &db,
+        &OwnerId::new("usr_self"),
+        &upsert("Friend", "2026-05-15T00:00:00Z"),
+    )?;
+    write_realtime_batch(
+        &db,
+        &OwnerId::new("usr_self"),
+        &upsert("Renamed", "2026-05-15T00:01:00Z"),
+    )?;
+    // A peer's older row wins the LWW merge, so the next observation looks like
+    // the same rename once more - seven hours later in the real report.
+    db.execute_non_query(
+        "UPDATE usrself_friend_log_current SET display_name = 'Friend' WHERE user_id = 'usr_friend'",
+        &Default::default(),
+    )?;
+    write_realtime_batch(
+        &db,
+        &OwnerId::new("usr_self"),
+        &upsert("Renamed", "2026-05-15T07:00:00Z"),
+    )?;
+
+    let history = db.execute(
+        "SELECT created_at FROM usrself_friend_log_history WHERE user_id = 'usr_friend' AND type = 'DisplayName'",
+        &Default::default(),
+    )?;
+    assert_eq!(
+        history.len(),
+        1,
+        "the same transition must be recorded once"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_device_that_yielded_does_not_write_friend_log_history() -> Result<(), crate::Error> {
+    let _guard = COLLECTOR_GATE
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let dir = TestDir::new("realtime-friend-log-gate");
+    let db = DatabaseService::new(&dir.path.join("VRCX-0.sqlite3"))?;
+
+    vrcx_0_contracts::set_live_feed_collector(false);
+    let result = write_realtime_batch(
+        &db,
+        &OwnerId::new("usr_self"),
+        &RealtimePersistenceBatch {
+            friend_log_upserts: vec![FriendLogUpsert {
+                target_user_id: "usr_friend".into(),
+                display_name: "Friend".into(),
+                trust_level: "Known".into(),
+                friend_number: 12,
+                created_at: "2026-05-15T00:00:00Z".into(),
+                force_history: false,
+            }],
+            ..RealtimePersistenceBatch::default()
+        },
+    );
+    vrcx_0_contracts::set_live_feed_collector(true);
+    result?;
+
+    let history = db.execute(
+        "SELECT user_id FROM usrself_friend_log_history WHERE user_id = 'usr_friend'",
+        &Default::default(),
+    )?;
+    assert!(
+        history.is_empty(),
+        "history comes from the elected collector"
+    );
+    // The current row still updates locally so the friend list stays right.
+    let current = db.execute(
+        "SELECT display_name FROM usrself_friend_log_current WHERE user_id = 'usr_friend'",
+        &Default::default(),
+    )?;
+    assert_eq!(current.len(), 1);
+    Ok(())
+}
+
+#[test]
+fn a_second_observer_of_the_same_feed_event_is_skipped() -> Result<(), crate::Error> {
+    let _guard = COLLECTOR_GATE
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    vrcx_0_contracts::set_live_feed_collector(true);
+    // Two devices collecting for a few seconds during a handover each stamp their
+    // own created_at for the same friend event. The second observation must not
+    // add an unmergeable duplicate.
+    let dir = TestDir::new("realtime-feed-handover-duplicate");
+    let db = DatabaseService::new(&dir.path.join("VRCX-0.sqlite3"))?;
+    let batch = |created_at: &str| RealtimePersistenceBatch {
+        feed_entries: vec![FeedLiveEntry::Online {
+            created_at: created_at.into(),
+            user_id: "usr_friend".into(),
+            display_name: "Friend".into(),
+            location: "wrld_1:1~friends(usr_friend)".into(),
+            world_name: "World".into(),
+            group_name: String::new(),
+            time: None,
+            world_id: None,
+            display_location: None,
+            owner_user_id: String::new(),
+        }],
+        ..RealtimePersistenceBatch::default()
+    };
+
+    write_realtime_batch(
+        &db,
+        &OwnerId::new("usr_self"),
+        &batch("2026-05-15T00:00:00Z"),
+    )?;
+    write_realtime_batch(
+        &db,
+        &OwnerId::new("usr_self"),
+        &batch("2026-05-15T00:00:04Z"),
+    )?;
+    // A genuinely different event (other location) still lands.
+    let mut moved = batch("2026-05-15T00:00:09Z");
+    if let Some(FeedLiveEntry::Online { location, .. }) = moved.feed_entries.first_mut() {
+        *location = "wrld_2:2~friends(usr_friend)".into();
+    }
+    write_realtime_batch(&db, &OwnerId::new("usr_self"), &moved)?;
+
+    let rows = db.execute(
+        "SELECT location FROM usrself_feed_online_offline WHERE user_id = 'usr_friend' ORDER BY created_at",
+        &Default::default(),
+    )?;
+    assert_eq!(rows.len(), 2, "same event once, the move separately");
+    Ok(())
+}
+
 #[test]
 fn display_name_change_on_update_writes_display_name_history() -> Result<(), crate::Error> {
     let dir = TestDir::new("realtime-display-name-change");
@@ -1170,6 +1323,9 @@ fn checkpointed_avatar_wear_extends_one_log_row_and_adds_only_the_new_time(
 #[test]
 fn backfill_skips_entries_that_have_no_feed_row_instead_of_failing_the_sync(
 ) -> Result<(), crate::Error> {
+    let _guard = COLLECTOR_GATE
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
     let dir = TestDir::new("realtime-feed-backfill-entry-kinds");
     let db = DatabaseService::new(&dir.path.join("VRCX-0.sqlite3"))?;
 
@@ -1193,6 +1349,9 @@ fn backfill_skips_entries_that_have_no_feed_row_instead_of_failing_the_sync(
 #[test]
 fn backfill_only_treats_rows_from_before_the_current_sync_as_duplicates() -> Result<(), crate::Error>
 {
+    let _guard = COLLECTOR_GATE
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
     let dir = TestDir::new("realtime-feed-backfill-same-sync");
     let db = DatabaseService::new(&dir.path.join("VRCX-0.sqlite3"))?;
     let owner = OwnerId::new("usr_self");
@@ -1261,6 +1420,9 @@ fn backfill_obeys_the_collector_election() -> Result<(), crate::Error> {
 #[test]
 fn backfill_matches_duplicates_across_time_formats_only_inside_the_window(
 ) -> Result<(), crate::Error> {
+    let _guard = COLLECTOR_GATE
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
     let dir = TestDir::new("realtime-feed-backfill-window");
     let db = DatabaseService::new(&dir.path.join("VRCX-0.sqlite3"))?;
     let owner = OwnerId::new("usr_self");

@@ -93,47 +93,210 @@ pub fn insert_backfilled_feed(
     Ok(inserted)
 }
 
+/// Business columns that identify one feed event.
+///
+/// `created_at` (local detection time) and `time` (derived locally) are
+/// deliberately excluded: every client stamps its own, so two clients observing
+/// the same event differ in exactly those columns. Everything else participates,
+/// including `previous_*` - without them "the same change written twice" and
+/// "two genuinely different changes with the same outcome" look identical.
+/// (Same trade-off as VRCX-Luo's cross-client precheck.)
+fn feed_identity_columns(
+    entry: &FeedLiveEntry,
+) -> Option<(&'static str, Vec<(&'static str, String)>)> {
+    let columns = |entry_type: Option<String>,
+                   user_id: &str,
+                   display_name: &str,
+                   rest: Vec<(&'static str, String)>| {
+        let mut out = vec![
+            ("user_id", user_id.to_string()),
+            ("display_name", display_name.to_string()),
+        ];
+        if let Some(entry_type) = entry_type {
+            out.push(("type", entry_type));
+        }
+        out.extend(rest);
+        out
+    };
+    Some(match entry {
+        FeedLiveEntry::Gps {
+            user_id,
+            display_name,
+            location,
+            world_name,
+            previous_location,
+            group_name,
+            ..
+        } => (
+            "feed_gps",
+            columns(
+                None,
+                user_id,
+                display_name,
+                vec![
+                    ("location", location.clone()),
+                    ("world_name", world_name.clone()),
+                    ("previous_location", previous_location.clone()),
+                    ("group_name", group_name.clone()),
+                ],
+            ),
+        ),
+        FeedLiveEntry::Online {
+            user_id,
+            display_name,
+            location,
+            world_name,
+            group_name,
+            ..
+        }
+        | FeedLiveEntry::Offline {
+            user_id,
+            display_name,
+            location,
+            world_name,
+            group_name,
+            ..
+        } => (
+            "feed_online_offline",
+            columns(
+                Some(entry.entry_type().to_string()),
+                user_id,
+                display_name,
+                vec![
+                    ("location", location.clone()),
+                    ("world_name", world_name.clone()),
+                    ("group_name", group_name.clone()),
+                ],
+            ),
+        ),
+        FeedLiveEntry::Status {
+            user_id,
+            display_name,
+            status,
+            status_description,
+            previous_status,
+            previous_status_description,
+            ..
+        } => (
+            "feed_status",
+            columns(
+                None,
+                user_id,
+                display_name,
+                vec![
+                    ("status", status.clone()),
+                    ("status_description", status_description.clone()),
+                    ("previous_status", previous_status.clone()),
+                    (
+                        "previous_status_description",
+                        previous_status_description.clone(),
+                    ),
+                ],
+            ),
+        ),
+        FeedLiveEntry::Bio {
+            user_id,
+            display_name,
+            bio,
+            previous_bio,
+            ..
+        } => (
+            "feed_bio",
+            columns(
+                None,
+                user_id,
+                display_name,
+                vec![("bio", bio.clone()), ("previous_bio", previous_bio.clone())],
+            ),
+        ),
+        FeedLiveEntry::Avatar {
+            user_id,
+            display_name,
+            owner_id,
+            avatar_name,
+            current_avatar_image_url,
+            previous_current_avatar_image_url,
+            ..
+        } => (
+            "feed_avatar",
+            columns(
+                None,
+                user_id,
+                display_name,
+                vec![
+                    ("owner_id", owner_id.clone()),
+                    ("avatar_name", avatar_name.clone()),
+                    ("current_avatar_image_url", current_avatar_image_url.clone()),
+                    (
+                        "previous_current_avatar_image_url",
+                        previous_current_avatar_image_url.clone(),
+                    ),
+                ],
+            ),
+        ),
+        _ => return None,
+    })
+}
+
+/// Whether a row with this event's full content already exists within `window_secs`.
+///
+/// Used by the live write path: during a collector handover both devices can
+/// observe the same event for a few seconds, and the losing one would otherwise
+/// append an unmergeable duplicate. VRCX-Luo guards this with `SELECT ... FOR
+/// UPDATE` inside a transaction because its clients share one database; ours
+/// writes inside a single SQLite transaction, which serializes writers the same
+/// way.
+pub(crate) fn feed_recent_duplicate_exists(
+    tx: &mut DatabaseWriteTransaction<'_>,
+    user_prefix: &str,
+    entry: &FeedLiveEntry,
+    window_secs: i64,
+) -> Result<bool, Error> {
+    let Some((table, columns)) = feed_identity_columns(entry) else {
+        return Ok(false);
+    };
+    let mut params = ParamsBuilder::new();
+    let mut clauses = Vec::with_capacity(columns.len() + 1);
+    for (name, value) in &columns {
+        clauses.push(format!("{name} = @{name}"));
+        params = params.set(*name, value.clone());
+    }
+    params = params
+        .set("created_at", entry.created_at().to_string())
+        .set("window", window_secs);
+    let rows = tx.execute(
+        &format!(
+            "SELECT id FROM {user_prefix}_{table} WHERE {} AND ABS(julianday(created_at) - julianday(@created_at)) * 86400 <= @window LIMIT 1",
+            clauses.join(" AND ")
+        ),
+        &params.build(),
+    )?;
+    Ok(!rows.is_empty())
+}
+
 fn backfilled_entry_table_if_new(
     tx: &mut DatabaseWriteTransaction<'_>,
     user_prefix: &str,
     entry: &FeedLiveEntry,
     written: &BackfillWrites,
 ) -> Result<Option<&'static str>, Error> {
-    let (table, same_change, params) = match entry {
-        FeedLiveEntry::Gps { location, .. } => (
-            "feed_gps",
-            "location = @location",
-            ParamsBuilder::new().set("location", location.clone()),
-        ),
-        FeedLiveEntry::Online { .. } | FeedLiveEntry::Offline { .. } => (
-            "feed_online_offline",
-            "type = @type",
-            ParamsBuilder::new().set("type", entry.entry_type()),
-        ),
-        FeedLiveEntry::Status {
-            status,
-            status_description,
-            ..
-        } => (
-            "feed_status",
-            "status = @status AND status_description = @status_description",
-            ParamsBuilder::new()
-                .set("status", status.clone())
-                .set("status_description", status_description.clone()),
-        ),
-        FeedLiveEntry::Avatar {
-            current_avatar_image_url,
-            ..
-        } => (
-            "feed_avatar",
-            "current_avatar_image_url = @current_avatar_image_url",
-            ParamsBuilder::new().set("current_avatar_image_url", current_avatar_image_url.clone()),
-        ),
-        _ => return Ok(None),
+    let Some((table, columns)) = feed_identity_columns(entry) else {
+        return Ok(None);
     };
+    // `backfill_nearby_ids_sql` already pins `user_id = @user_id`, so the
+    // remaining identity columns form the `same_change` part.
+    let same_change = columns
+        .iter()
+        .filter(|(name, _)| *name != "user_id")
+        .map(|(name, _)| format!("{name} = @{name}"))
+        .collect::<Vec<_>>()
+        .join(" AND ");
+    let mut params = ParamsBuilder::new();
+    for (name, value) in &columns {
+        params = params.set(*name, value.clone());
+    }
     let mut params = params
-        .set("user_id", entry.user_id())
-        .set("created_at", entry.created_at())
+        .set("created_at", entry.created_at().to_string())
         .set("window", BACKFILL_DUPLICATE_WINDOW_SECS);
     let created_ms = parse_activity_time_ms(entry.created_at());
     if let Some(created_ms) = created_ms {
@@ -143,7 +306,7 @@ fn backfilled_entry_table_if_new(
             .set("created_to", activity_iso_from_ms(created_ms + margin_ms));
     }
     let nearby = tx.execute(
-        &backfill_nearby_ids_sql(user_prefix, table, same_change, created_ms.is_some()),
+        &backfill_nearby_ids_sql(user_prefix, table, &same_change, created_ms.is_some()),
         &params.build(),
     )?;
     let recorded_elsewhere = nearby

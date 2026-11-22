@@ -2,6 +2,11 @@ use crate::avatars::{upsert_avatar_history, upsert_avatar_time_spent};
 use crate::common::normalize_text;
 use crate::database::DatabaseService;
 use crate::feed::insert_feed_entry;
+
+/// Live-feed de-duplication window. Deliberately shorter than the backfill
+/// window: a handover duplicate is observed within seconds, and a longer window
+/// risks swallowing two genuinely different events that look alike.
+const LIVE_FEED_DUPLICATE_WINDOW_SECS: i64 = 60;
 use crate::friends::{delete_friend_log_current, upsert_friend_log_current};
 use crate::game_log::{
     ensure_game_log_tables, insert_game_log_location, update_game_log_location_time,
@@ -61,6 +66,18 @@ pub fn write_realtime_batch(
         // row for the same friend event. See `vrcx_0_contracts::collector_gate`.
         if vrcx_0_contracts::is_live_feed_collector() {
             for entry in &batch.feed_entries {
+                // Handover guard: for a few seconds two devices can both believe
+                // they collect, and each would stamp its own `created_at` for the
+                // same friend event - two rows the sync layer can never merge.
+                // Skip an insert when this exact event is already on record.
+                if crate::feed::feed_recent_duplicate_exists(
+                    tx,
+                    &user_prefix,
+                    entry,
+                    LIVE_FEED_DUPLICATE_WINDOW_SECS,
+                )? {
+                    continue;
+                }
                 counts.add_realtime_rows(insert_feed_entry(tx, &user_prefix, entry)?);
             }
         }

@@ -538,21 +538,30 @@ pub(crate) fn upsert_friend_log_current(
     else {
         return Ok(0);
     };
+    // The current row is per-device (each client keeps its own friend list), so
+    // two clients both see a rename and would both append history - VRCX avoids
+    // that by sharing one `current` table, which this mesh cannot do because the
+    // tables sync asynchronously. History is therefore written by the elected
+    // collector only; every other device pulls it. `current` still updates
+    // locally so the friend list stays correct.
+    if !vrcx_0_contracts::is_live_feed_collector() {
+        return Ok(affected);
+    }
     for history in &plan.history {
-        affected = affected.saturating_add(add_friend_log_history(
-            tx,
-            user_prefix,
-            &FriendLogHistoryEntry {
-                created_at: &entry.created_at,
-                entry_type: history.entry_type,
-                user_id: &plan.user_id,
-                display_name: &plan.display_name,
-                previous_display_name: &history.previous_display_name,
-                trust_level: &plan.trust_level,
-                previous_trust_level: &history.previous_trust_level,
-                friend_number: plan.friend_number,
-            },
-        )?);
+        let candidate = FriendLogHistoryEntry {
+            created_at: &entry.created_at,
+            entry_type: history.entry_type,
+            user_id: &plan.user_id,
+            display_name: &plan.display_name,
+            previous_display_name: &history.previous_display_name,
+            trust_level: &plan.trust_level,
+            previous_trust_level: &history.previous_trust_level,
+            friend_number: plan.friend_number,
+        };
+        if repeats_newest_history(tx, user_prefix, &candidate)? {
+            continue;
+        }
+        affected = affected.saturating_add(add_friend_log_history(tx, user_prefix, &candidate)?);
     }
     Ok(affected)
 }
@@ -583,23 +592,56 @@ pub(crate) fn delete_friend_log_current(
         &ParamsBuilder::new().set("user_id", target_user_id).build(),
     )?;
     let mut affected = affected_count(deleted);
-    if deleted > 0 {
-        affected = affected.saturating_add(add_friend_log_history(
-            tx,
-            user_prefix,
-            &FriendLogHistoryEntry {
-                created_at: &entry.created_at,
-                entry_type: "Unfriend",
-                user_id: &existing.user_id,
-                display_name: &existing.display_name,
-                previous_display_name: "",
-                trust_level: &existing.trust_level,
-                previous_trust_level: "",
-                friend_number: existing.friend_number,
-            },
-        )?);
+    if deleted > 0 && vrcx_0_contracts::is_live_feed_collector() {
+        let candidate = FriendLogHistoryEntry {
+            created_at: &entry.created_at,
+            entry_type: "Unfriend",
+            user_id: &existing.user_id,
+            display_name: &existing.display_name,
+            previous_display_name: "",
+            trust_level: &existing.trust_level,
+            previous_trust_level: "",
+            friend_number: existing.friend_number,
+        };
+        if !repeats_newest_history(tx, user_prefix, &candidate)? {
+            affected =
+                affected.saturating_add(add_friend_log_history(tx, user_prefix, &candidate)?);
+        }
     }
     Ok(affected)
+}
+
+/// True when this transition is already the newest entry for the user and type.
+///
+/// Comparing against the newest entry instead of a time window covers the case
+/// that produced a duplicate seven hours later: the synced `current` row can be
+/// reverted by a peer, after which the next observation looks like the same
+/// rename again. A genuine back-and-forth (A->B, B->A, A->B) still differs from
+/// the newest entry, so it is still recorded.
+fn repeats_newest_history(
+    tx: &mut DatabaseWriteTransaction<'_>,
+    user_prefix: &str,
+    entry: &FriendLogHistoryEntry<'_>,
+) -> Result<bool, Error> {
+    let rows = tx.execute(
+        &format!(
+            "SELECT display_name, previous_display_name, trust_level, previous_trust_level
+             FROM {user_prefix}_friend_log_history
+             WHERE user_id = @user_id AND type = @type
+             ORDER BY created_at DESC, id DESC LIMIT 1"
+        ),
+        &ParamsBuilder::new()
+            .set("user_id", entry.user_id.to_string())
+            .set("type", entry.entry_type.to_string())
+            .build(),
+    )?;
+    let Some(row) = rows.first() else {
+        return Ok(false);
+    };
+    Ok(row_string(row, 0) == entry.display_name
+        && row_string(row, 1) == entry.previous_display_name
+        && row_string(row, 2) == entry.trust_level
+        && row_string(row, 3) == entry.previous_trust_level)
 }
 
 fn add_friend_log_history(

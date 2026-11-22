@@ -13,5 +13,7 @@ pub use types::{
 };
 #[cfg(test)]
 pub(crate) use write::backfill_nearby_ids_sql;
-pub(crate) use write::{feed_avatar_delete_before_sql, insert_feed_entry};
+pub(crate) use write::{
+    feed_avatar_delete_before_sql, feed_recent_duplicate_exists, insert_feed_entry,
+};
 pub use write::{feed_avatar_purge, insert_backfilled_feed, BackfillWrites};
