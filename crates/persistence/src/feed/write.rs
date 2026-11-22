@@ -104,135 +104,52 @@ pub fn insert_backfilled_feed(
 fn feed_identity_columns(
     entry: &FeedLiveEntry,
 ) -> Option<(&'static str, Vec<(&'static str, String)>)> {
-    let columns = |entry_type: Option<String>,
-                   user_id: &str,
-                   display_name: &str,
-                   rest: Vec<(&'static str, String)>| {
-        let mut out = vec![
-            ("user_id", user_id.to_string()),
-            ("display_name", display_name.to_string()),
-        ];
-        if let Some(entry_type) = entry_type {
-            out.push(("type", entry_type));
-        }
-        out.extend(rest);
-        out
-    };
+    // Only the *change* participates, never client-local derivations:
+    // `previous_*`, `world_name` and `group_name` are resolved per client from
+    // its own last-seen state, so two observers of one event legitimately
+    // disagree on them. Including them would stop the guard from recognising a
+    // replayed frame that this device already recorded.
     Some(match entry {
         FeedLiveEntry::Gps {
-            user_id,
-            display_name,
-            location,
-            world_name,
-            previous_location,
-            group_name,
-            ..
+            user_id, location, ..
         } => (
             "feed_gps",
-            columns(
-                None,
-                user_id,
-                display_name,
-                vec![
-                    ("location", location.clone()),
-                    ("world_name", world_name.clone()),
-                    ("previous_location", previous_location.clone()),
-                    ("group_name", group_name.clone()),
-                ],
-            ),
+            vec![("user_id", user_id.clone()), ("location", location.clone())],
         ),
-        FeedLiveEntry::Online {
-            user_id,
-            display_name,
-            location,
-            world_name,
-            group_name,
-            ..
-        }
-        | FeedLiveEntry::Offline {
-            user_id,
-            display_name,
-            location,
-            world_name,
-            group_name,
-            ..
-        } => (
+        FeedLiveEntry::Online { user_id, .. } | FeedLiveEntry::Offline { user_id, .. } => (
             "feed_online_offline",
-            columns(
-                Some(entry.entry_type().to_string()),
-                user_id,
-                display_name,
-                vec![
-                    ("location", location.clone()),
-                    ("world_name", world_name.clone()),
-                    ("group_name", group_name.clone()),
-                ],
-            ),
+            vec![
+                ("user_id", user_id.clone()),
+                ("type", entry.entry_type().to_string()),
+            ],
         ),
         FeedLiveEntry::Status {
             user_id,
-            display_name,
             status,
             status_description,
-            previous_status,
-            previous_status_description,
             ..
         } => (
             "feed_status",
-            columns(
-                None,
-                user_id,
-                display_name,
-                vec![
-                    ("status", status.clone()),
-                    ("status_description", status_description.clone()),
-                    ("previous_status", previous_status.clone()),
-                    (
-                        "previous_status_description",
-                        previous_status_description.clone(),
-                    ),
-                ],
-            ),
+            vec![
+                ("user_id", user_id.clone()),
+                ("status", status.clone()),
+                ("status_description", status_description.clone()),
+            ],
         ),
-        FeedLiveEntry::Bio {
-            user_id,
-            display_name,
-            bio,
-            previous_bio,
-            ..
-        } => (
+        FeedLiveEntry::Bio { user_id, bio, .. } => (
             "feed_bio",
-            columns(
-                None,
-                user_id,
-                display_name,
-                vec![("bio", bio.clone()), ("previous_bio", previous_bio.clone())],
-            ),
+            vec![("user_id", user_id.clone()), ("bio", bio.clone())],
         ),
         FeedLiveEntry::Avatar {
             user_id,
-            display_name,
-            owner_id,
-            avatar_name,
             current_avatar_image_url,
-            previous_current_avatar_image_url,
             ..
         } => (
             "feed_avatar",
-            columns(
-                None,
-                user_id,
-                display_name,
-                vec![
-                    ("owner_id", owner_id.clone()),
-                    ("avatar_name", avatar_name.clone()),
-                    ("current_avatar_image_url", current_avatar_image_url.clone()),
-                    (
-                        "previous_current_avatar_image_url",
-                        previous_current_avatar_image_url.clone(),
-                    ),
-                ],
-            ),
+            vec![
+                ("user_id", user_id.clone()),
+                ("current_avatar_image_url", current_avatar_image_url.clone()),
+            ],
         ),
         _ => return None,
     })

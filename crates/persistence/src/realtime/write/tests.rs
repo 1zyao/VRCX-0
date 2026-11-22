@@ -537,18 +537,39 @@ fn a_second_observer_of_the_same_feed_event_is_skipped() -> Result<(), crate::Er
         &OwnerId::new("usr_self"),
         &batch("2026-05-15T00:00:04Z"),
     )?;
-    // A genuinely different event (other location) still lands.
-    let mut moved = batch("2026-05-15T00:00:09Z");
-    if let Some(FeedLiveEntry::Online { location, .. }) = moved.feed_entries.first_mut() {
-        *location = "wrld_2:2~friends(usr_friend)".into();
+    // A genuinely different event (the friend went offline) still lands; only
+    // the repeated *Online* observation is suppressed.
+    let mut offline = batch("2026-05-15T00:00:09Z");
+    if let Some(FeedLiveEntry::Online {
+        created_at,
+        user_id,
+        display_name,
+        location,
+        world_name,
+        group_name,
+        ..
+    }) = offline.feed_entries.first().cloned()
+    {
+        offline.feed_entries = vec![FeedLiveEntry::Offline {
+            created_at,
+            user_id,
+            display_name,
+            location,
+            world_name,
+            group_name,
+            time: None,
+            world_id: None,
+            display_location: None,
+            owner_user_id: String::new(),
+        }];
     }
-    write_realtime_batch(&db, &OwnerId::new("usr_self"), &moved)?;
+    write_realtime_batch(&db, &OwnerId::new("usr_self"), &offline)?;
 
     let rows = db.execute(
         "SELECT location FROM usrself_feed_online_offline WHERE user_id = 'usr_friend' ORDER BY created_at",
         &Default::default(),
     )?;
-    assert_eq!(rows.len(), 2, "same event once, the move separately");
+    assert_eq!(rows.len(), 2, "the repeat is dropped, the offline kept");
     Ok(())
 }
 
