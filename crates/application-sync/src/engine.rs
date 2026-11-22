@@ -53,12 +53,7 @@ pub const CONFIG_COLLECTOR_ROLE: &str = "remoteSync.collector";
 /// Collector priority: higher wins the election; ties fall back to device id.
 pub const CONFIG_COLLECTOR_PRIORITY: &str = "remoteSync.collectorPriority";
 
-/// Default sync period. Cross-device visibility is bounded by this: a row
-/// written on one device reaches the others after at most one period (plus the
-/// round trip), so the old 60s left peers minutes behind. Peers also wake each
-/// other through PostgreSQL NOTIFY, which makes this a heartbeat rather than the
-/// only source of updates.
-pub const DEFAULT_INTERVAL_SEC: u64 = 5;
+pub const DEFAULT_INTERVAL_SEC: u64 = 60;
 pub const DEFAULT_RETAIN_DAYS: i64 = 30;
 
 const PUSH_BATCH: i64 = 200;
@@ -215,16 +210,6 @@ impl RemoteSyncEngine {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .progress
             .clone()
-    }
-
-    /// This device's id, as recorded in every op it pushes.
-    pub fn device_id(&self) -> String {
-        self.handle.device_id().to_string()
-    }
-
-    /// Wakes the interval loop immediately (manual "sync now", peer notify).
-    pub fn waker(&self) -> Arc<Notify> {
-        Arc::clone(&self.waker)
     }
 
     pub fn configured_interval(&self) -> u64 {

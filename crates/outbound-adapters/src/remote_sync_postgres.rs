@@ -26,9 +26,6 @@ use vrcx_0_contracts::{
     SyncRowSemantic,
 };
 
-/// Channel peers LISTEN on to learn that new ops were committed.
-pub const WAKEUP_CHANNEL: &str = "vrcx_sync_ops";
-
 const META_PROTOCOL_VERSION: &str = "sync.protocolVersion";
 const META_PROVISIONED_AT: &str = "sync.provisionedAt";
 
@@ -1156,75 +1153,6 @@ fn parse_kind(code: &str) -> SyncOpKind {
 }
 
 impl PostgresSyncStore {
-    /// Wake this device whenever another device commits ops.
-    ///
-    /// The periodic loop stays as a fallback (a dropped LISTEN connection or a
-    /// notification lost during a network blip must not stall sync); this only
-    /// removes the up-to-one-period wait in the common case.
-    pub fn spawn_wakeup_listener(
-        self: &std::sync::Arc<Self>,
-        tasks: vrcx_0_application_core::TaskSupervisor,
-        own_device: String,
-        wake: std::sync::Arc<tokio::sync::Notify>,
-    ) {
-        let store = std::sync::Arc::clone(self);
-        tasks.spawn_cancellable(move |stop| async move {
-            while !stop.is_stop_requested() {
-                match store.listen_once(&own_device, &wake, &stop).await {
-                    Ok(()) => {}
-                    Err(error) => {
-                        tracing::debug!(error = %error, "sync wakeup listener dropped; reconnecting");
-                    }
-                }
-                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-            }
-        });
-    }
-
-    async fn listen_once(
-        &self,
-        own_device: &str,
-        wake: &tokio::sync::Notify,
-        stop: &vrcx_0_application_core::TaskStopToken,
-    ) -> SyncStoreResult<()> {
-        // A dedicated connection: it only runs LISTEN, and is driven by hand so
-        // the notification messages can be observed.
-        let tls = make_tls_connector(self.tls_verify)?;
-        let (client, mut connection) = self.config.connect(tls).await.map_err(|error| {
-            SyncStoreError::Other(format!("PostgreSQL connect failed: {error}"))
-        })?;
-        client
-            .batch_execute(&format!("LISTEN {WAKEUP_CHANNEL}"))
-            .await
-            .map_err(pg_error)?;
-        loop {
-            let message = tokio::select! {
-                _ = tokio::time::sleep(std::time::Duration::from_secs(15)) => {
-                    if stop.is_stop_requested() {
-                        return Ok(());
-                    }
-                    continue;
-                }
-                // `Client` in this tokio-postgres version exposes no
-                // `notifications()`; driving the connection yields the same
-                // Notification messages.
-                message = futures_util::future::poll_fn(|cx| connection.poll_message(cx)) => message,
-            };
-            match message {
-                Some(Ok(tokio_postgres::AsyncMessage::Notification(notification))) => {
-                    if notification.channel() == WAKEUP_CHANNEL
-                        && notification.payload() != own_device
-                    {
-                        wake.notify_one();
-                    }
-                }
-                Some(Ok(_)) => {}
-                Some(Err(error)) => return Err(pg_error(error)),
-                None => return Ok(()),
-            }
-        }
-    }
-
     async fn push_ops_once(&self, ops: &[SyncOpRecord]) -> SyncStoreResult<()> {
         // One deterministic order the op-log insert and the
         // materialization: concurrent multi-row inserts into the op log's
@@ -1261,7 +1189,6 @@ impl PostgresSyncStore {
             }
         }
         self.with_client(move |mut client| async move {
-            let notify_device = ops.first().map(|op| op.device.clone()).unwrap_or_default();
             let transaction = client.transaction().await.map_err(pg_error)?;
             // Serialize pushes across clients: one writer at a time removes
             // every interleaving that can form a lock cycle. The lock is
@@ -1350,19 +1277,6 @@ impl PostgresSyncStore {
                 materialize_op(&transaction, op, schema).await?;
             }
             flush_set_batch(&transaction, &schemas, &mut set_batch).await?;
-
-            // Tell peers there is something to pull. Notifications are only
-            // delivered on commit, so this rides the same transaction: a peer
-            // can never wake up for ops that rolled back.
-            if !notify_device.is_empty() {
-                transaction
-                    .execute(
-                        "SELECT pg_notify($1, $2)",
-                        &[&WAKEUP_CHANNEL, &notify_device],
-                    )
-                    .await
-                    .map_err(pg_error)?;
-            }
 
             transaction.commit().await.map_err(pg_error)?;
             Ok(((), client))

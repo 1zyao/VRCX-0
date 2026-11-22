@@ -134,7 +134,6 @@ impl RemoteSyncHost {
             })
             .map_err(|error| Error::custom(error.to_string()))?,
         );
-        let store_for_listener = Arc::clone(&store);
         let engine = RemoteSyncEngine::new(
             Arc::clone(&self.db),
             store,
@@ -148,14 +147,6 @@ impl RemoteSyncHost {
             .mark_bootstrap_pending()
             .map_err(|error| Error::custom(format!("Failed to arm sync bootstrap: {error}")))?;
         engine.start_loop(self.tasks.clone());
-        // Peers notify this device when they commit ops, so the periodic loop is
-        // only the fallback: cross-device visibility drops from one period to the
-        // round trip.
-        store_for_listener.spawn_wakeup_listener(
-            self.tasks.clone(),
-            engine.device_id(),
-            engine.waker(),
-        );
         if let Ok(mut guard) = self.engine.write() {
             *guard = Some(Arc::clone(&engine));
         }
