@@ -53,7 +53,10 @@ pub const CONFIG_COLLECTOR_ROLE: &str = "remoteSync.collector";
 /// Collector priority: higher wins the election; ties fall back to device id.
 pub const CONFIG_COLLECTOR_PRIORITY: &str = "remoteSync.collectorPriority";
 
-pub const DEFAULT_INTERVAL_SEC: u64 = 60;
+/// Default sync period. Cross-device visibility is bounded by this, so the old
+/// 60s left peers minutes behind; 5s keeps a row's trip to peers inside a couple
+/// of seconds without turning the cycle into a busy loop.
+pub const DEFAULT_INTERVAL_SEC: u64 = 5;
 pub const DEFAULT_RETAIN_DAYS: i64 = 30;
 
 const PUSH_BATCH: i64 = 200;
