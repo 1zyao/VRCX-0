@@ -227,6 +227,26 @@ impl RemoteSyncEngine {
         Arc::clone(&self.waker)
     }
 
+    /// Resolves as soon as this device has ops waiting to be pushed.
+    ///
+    /// Polls the local outbox once per second (a local SQLite count, no network)
+    /// so a freshly written row does not wait for the full sync period before
+    /// leaving this device.
+    async fn wait_for_pending_outbox(&self, stop_token: &vrcx_0_application_core::TaskStopToken) {
+        loop {
+            if stop_token.is_stop_requested() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            if vrcx_0_persistence::sync::outbox_pending_count(&self.db)
+                .map(|pending| pending > 0)
+                .unwrap_or(false)
+            {
+                return;
+            }
+        }
+    }
+
     pub fn configured_interval(&self) -> u64 {
         vrcx_0_persistence::config::get_string(&self.db, CONFIG_INTERVAL_SEC, "")
             .ok()
@@ -279,6 +299,12 @@ impl RemoteSyncEngine {
                         }
                     }
                     _ = engine.waker.notified() => {}
+                    // Peer NOTIFY only shortens the *reader's* wait. A row this
+                    // device wrote sits in the outbox until its own timer fires,
+                    // so a 5s period meant up to 5s before the push. Watch the
+                    // local outbox instead: one indexed count per second costs
+                    // nothing, and a non-empty outbox starts the cycle at once.
+                    _ = engine.wait_for_pending_outbox(&stop_token) => {}
                 }
                 if let Err(error) = engine.run_one_cycle().await {
                     tracing::warn!(error = %error, "remote sync cycle failed");
