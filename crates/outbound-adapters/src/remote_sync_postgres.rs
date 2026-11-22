@@ -1187,54 +1187,40 @@ impl PostgresSyncStore {
         wake: &tokio::sync::Notify,
         stop: &vrcx_0_application_core::TaskStopToken,
     ) -> SyncStoreResult<()> {
-        // A dedicated connection, driven by its own task: `Client` in this
-        // tokio-postgres version exposes no `notifications()`, and a connection
-        // nobody polls never delivers anything - the first version awaited
-        // `batch_execute` forever because of exactly that.
+        // A dedicated connection: it only runs LISTEN, and is driven by hand so
+        // the notification messages can be observed.
         let tls = make_tls_connector(self.tls_verify)?;
-        let (client, connection) = self.config.connect(tls).await.map_err(|error| {
+        let (client, mut connection) = self.config.connect(tls).await.map_err(|error| {
             SyncStoreError::Other(format!("PostgreSQL connect failed: {error}"))
         })?;
-        let (sender, mut receiver) = tokio::sync::mpsc::channel::<(String, String)>(64);
-        tokio::spawn(async move {
-            let mut connection = connection;
-            loop {
-                match futures_util::future::poll_fn(|cx| connection.poll_message(cx)).await {
-                    Some(Ok(tokio_postgres::AsyncMessage::Notification(notification))) => {
-                        let channel = notification.channel().to_string();
-                        let payload = notification.payload().to_string();
-                        if sender.send((channel, payload)).await.is_err() {
-                            return;
-                        }
-                    }
-                    Some(Ok(_)) => {}
-                    Some(Err(error)) => {
-                        tracing::debug!(error = %error, "postgres notification stream failed");
-                        return;
-                    }
-                    None => return,
-                }
-            }
-        });
         client
             .batch_execute(&format!("LISTEN {WAKEUP_CHANNEL}"))
             .await
             .map_err(pg_error)?;
         loop {
-            tokio::select! {
+            let message = tokio::select! {
                 _ = tokio::time::sleep(std::time::Duration::from_secs(15)) => {
                     if stop.is_stop_requested() {
                         return Ok(());
                     }
+                    continue;
                 }
-                received = receiver.recv() => match received {
-                    Some((channel, payload)) => {
-                        if channel == WAKEUP_CHANNEL && payload != own_device {
-                            wake.notify_one();
-                        }
+                // `Client` in this tokio-postgres version exposes no
+                // `notifications()`; driving the connection yields the same
+                // Notification messages.
+                message = futures_util::future::poll_fn(|cx| connection.poll_message(cx)) => message,
+            };
+            match message {
+                Some(Ok(tokio_postgres::AsyncMessage::Notification(notification))) => {
+                    if notification.channel() == WAKEUP_CHANNEL
+                        && notification.payload() != own_device
+                    {
+                        wake.notify_one();
                     }
-                    None => return Ok(()),
-                },
+                }
+                Some(Ok(_)) => {}
+                Some(Err(error)) => return Err(pg_error(error)),
+                None => return Ok(()),
             }
         }
     }
